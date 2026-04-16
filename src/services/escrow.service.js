@@ -37,3 +37,67 @@ export const createEscrow = async ({ buyerId, sellerId, amount }) => {
 
   return reference;
 };
+
+export const releaseEscrow = async (reference) => {
+  const escrowRecord = await prisma.escrow.findUnique({
+    where: { reference },
+  });
+
+  if (!escrowRecord) throw new Error("Escrow not found");
+  if (escrowRecord.status !== "PENDING")
+    throw new Error("Already processed");
+
+  const escrowAccount = await prisma.account.findFirst({
+    where: { accountNumber: "ESCROW_ACCOUNT" },
+  });
+
+  const sellerAccount = await prisma.account.findFirst({
+    where: { userId: escrowRecord.sellerId },
+  });
+
+  // Move funds to seller
+  await createDoubleEntry({
+    debitAccountId: escrowAccount.id,
+    creditAccountId: sellerAccount.id,
+    amount: escrowRecord.amount,
+    reference: `REL_${reference}`,
+    narration: "Escrow release",
+  });
+
+  await prisma.escrow.update({
+    where: { reference },
+    data: { status: "RELEASED" },
+  });
+};
+
+export const cancelEscrow = async (reference) => {
+  const escrowRecord = await prisma.escrow.findUnique({
+    where: { reference },
+  });
+
+  if (!escrowRecord) throw new Error("Escrow not found");
+  if (escrowRecord.status !== "PENDING")
+    throw new Error("Already processed");
+
+  const escrowAccount = await prisma.account.findFirst({
+    where: { accountNumber: "ESCROW_ACCOUNT" },
+  });
+
+  const buyerAccount = await prisma.account.findFirst({
+    where: { userId: escrowRecord.buyerId },
+  });
+
+  // Refund buyer
+  await createDoubleEntry({
+    debitAccountId: escrowAccount.id,
+    creditAccountId: buyerAccount.id,
+    amount: escrowRecord.amount,
+    reference: `REF_${reference}`,
+    narration: "Escrow refund",
+  });
+
+  await prisma.escrow.update({
+    where: { reference },
+    data: { status: "CANCELLED" },
+  });
+};
