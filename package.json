@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/app.js",
-    "dev": "nodemon src/app.js",
+    "dev": "node src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "generate-keys": "node src/scripts/generateKeys.js",
     "lint": "eslint src/**/*.js"
