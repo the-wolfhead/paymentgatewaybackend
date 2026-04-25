@@ -109,6 +109,15 @@ model User {
   accounts       Account[]
 }
 
+model Wallet {
+  id        String   @id
+  userId    String   @unique
+  balance   BigInt   @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  User      User     @relation(fields: [userId], references: [id])
+}
+
 model Account {
   id            String      @id @default(uuid())
   userId        String?
@@ -139,15 +148,6 @@ model LedgerEntry {
 
   @@index([transactionId])
   @@index([accountId])
-}
-
-model Wallet {
-  id        String   @id
-  userId    String   @unique
-  balance   BigInt   @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime
-  User      User     @relation(fields: [userId], references: [id])
 }
 
 model ReconciliationLog {
