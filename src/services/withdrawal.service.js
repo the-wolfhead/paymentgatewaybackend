@@ -1,7 +1,7 @@
 // src/services/withdrawal.service.js
 
 import { prisma } from "../config/prisma.js";
-import { createDoubleEntry } from "./doubleLedger.service.js";
+import { createMultiEntry } from "./doubleLedger.service.js";
 import { getAccountBalance } from "./balance.service.js";
 import { sendPayout } from "./payout.service.js";
 
@@ -29,7 +29,7 @@ export const withdrawFunds = async ({
   const reference = `WDR_${Date.now()}`;
 
   // STEP 1: Ledger debit
-  await createDoubleEntry({
+  await createMultiEntry({
     debitAccountId: userAccount.id,
     creditAccountId: systemAccount.id,
     amount,
@@ -50,7 +50,7 @@ export const withdrawFunds = async ({
     return payout;
   } catch (err) {
     // STEP 3: Reverse if failed
-    await createDoubleEntry({
+    await createMultiEntry({
       debitAccountId: systemAccount.id,
       creditAccountId: userAccount.id,
       amount,
