@@ -6,42 +6,132 @@ datasource db {
   provider = "postgresql"
 }
 
-model Account {
-  id            String   @id @default(uuid())
-  userId        String?
-  accountNumber String   @unique
-  type          String   // USER | SYSTEM
-  createdAt     DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
-  entries LedgerEntry[]
+model Appointment {
+  id           Int      @id @default(autoincrement())
+  doctorId     Int
+  userId       String
+  date         DateTime
+  time         String
+  videoCallUrl String
+  status       String   @default("pending")
+  createdAt    DateTime @default(now())
+  Doctor       Doctor   @relation(fields: [doctorId], references: [id])
+  User         User     @relation(fields: [userId], references: [id])
 }
 
-model LedgerEntry {
-  id        String   @id @default(uuid())
-  accountId String
-  entryType String
-  amount    Float
-  reference String
-  narration String
-  createdAt DateTime @default(now())
+model Doctor {
+  id             Int              @id @default(autoincrement())
+  name           String
+  createdAt      DateTime         @default(now())
+  availableHours Json?
+  bio            String?
+  fee            Int              @default(3000)
+  rating         Float?           @default(0)
+  specialty      String[]
+  Appointment    Appointment[]
+  FavoriteDoctor FavoriteDoctor[]
+}
 
-  account Account @relation(fields: [accountId], references: [id])
+model FavoriteDoctor {
+  id       Int    @id @default(autoincrement())
+  userId   String
+  doctorId Int
+  Doctor   Doctor @relation(fields: [doctorId], references: [id])
+  User     User   @relation(fields: [userId], references: [id])
+}
+
+model Hospital {
+  id        Int      @id @default(autoincrement())
+  name      String
+  address   String
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+}
+
+model Lab {
+  id        Int      @id @default(autoincrement())
+  name      String
+  services  String
+  address   String
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+}
+
+model Pharmacy {
+  id        Int      @id @default(autoincrement())
+  name      String
+  address   String
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
 }
 
 model Transaction {
-  id        String   @id @default(uuid())
-  reference String   @unique
-  amount    Float
-  status    String
-  createdAt DateTime @default(now())
+  id               String             @id
+  userId           String
+  type             TransactionType
+  channel          TransactionChannel
+  amount           BigInt
+  currency         String             @default("NGN")
+  status           TransactionStatus  @default(PENDING)
+  reference        String?            @unique
+  paystackResponse Json?
+  meta             Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  User             User               @relation(fields: [userId], references: [id])
 }
 
-model ReconciliationLog {
-  id            String   @id @default(uuid())
-  reference     String
-  palmpayAmount Float
-  ledgerAmount  Float
-  status        String
-  createdAt     DateTime @default(now())
+model User {
+  id             String           @id
+  googleId       String?          @unique
+  email          String           @unique
+  name           String
+  picture        String?
+  createdAt      DateTime         @default(now())
+  password       String?
+  updatedAt      DateTime
+  alcoholUse     String?
+  allergies      String[]
+  bloodGroup     String?
+  drugUse        Boolean?         @default(false)
+  genotype       String?
+  medicalHistory String[]
+  smoker         Boolean?         @default(false)
+  balance        Float?           @default(0)
+  Appointment    Appointment[]
+  FavoriteDoctor FavoriteDoctor[]
+  Transaction    Transaction[]
+  Wallet         Wallet?
+}
+
+model Wallet {
+  id        String   @id
+  userId    String   @unique
+  balance   BigInt   @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  User      User     @relation(fields: [userId], references: [id])
+}
+
+enum TransactionChannel {
+  CARD
+  BANK_TRANSFER
+  USSD
+  WALLET
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum TransactionType {
+  TOPUP
+  PAYMENT
+  REFUND
 }
