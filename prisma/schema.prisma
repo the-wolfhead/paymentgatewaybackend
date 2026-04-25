@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id            String   @id @default(uuid())
+  userId        String?
+  accountNumber String   @unique
+  type          String   // USER | SYSTEM
+  createdAt     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+  entries LedgerEntry[]
+}
+
+model LedgerEntry {
+  id        String   @id @default(uuid())
+  accountId String
+  entryType String
+  amount    Float
+  reference String
+  narration String
+  createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id])
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  reference String   @unique
+  amount    Float
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model ReconciliationLog {
+  id            String   @id @default(uuid())
+  reference     String
+  palmpayAmount Float
+  ledgerAmount  Float
+  status        String
+  createdAt     DateTime @default(now())
+}
