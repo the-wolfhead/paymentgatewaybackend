@@ -107,6 +107,8 @@ model User {
   Transaction    Transaction[]
   Wallet         Wallet?
   accounts       Account[]
+  escrowsBought  Escrow[]         @relation("EscrowBuyer")
+  escrowsSold    Escrow[]         @relation("EscrowSeller")
 }
 
 model Wallet {
