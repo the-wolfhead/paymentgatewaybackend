@@ -1,7 +1,7 @@
 // src/services/escrow.service.js
 
 import { prisma } from "../config/prisma.js";
-import { createDoubleEntry } from "./doubleLedger.service.js";
+import { createMultiEntry } from "./doubleLedger.service.js";
 import { getAccountBalance } from "./balance.service.js";
 
 export const createEscrow = async ({ buyerId, sellerId, amount }) => {
@@ -17,7 +17,7 @@ export const createEscrow = async ({ buyerId, sellerId, amount }) => {
   const reference = `ESC_${Date.now()}`;
 
   // Move money to escrow
-  await createDoubleEntry({
+  await createMultiEntry({
     debitAccountId: buyer.id,
     creditAccountId: escrow.id,
     amount,
@@ -56,7 +56,7 @@ export const releaseEscrow = async (reference) => {
   });
 
   // Move funds to seller
-  await createDoubleEntry({
+  await createMultiEntry({
     debitAccountId: escrowAccount.id,
     creditAccountId: sellerAccount.id,
     amount: escrowRecord.amount,
@@ -88,7 +88,7 @@ export const cancelEscrow = async (reference) => {
   });
 
   // Refund buyer
-  await createDoubleEntry({
+  await createMultiEntry({
     debitAccountId: escrowAccount.id,
     creditAccountId: buyerAccount.id,
     amount: escrowRecord.amount,
