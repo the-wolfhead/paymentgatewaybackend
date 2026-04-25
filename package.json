@@ -9,8 +9,7 @@
     "dev": "node src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "generate-keys": "node src/scripts/generateKeys.js",
-    "lint": "eslint src/**/*.js",
-    "postinstall": "prisma generate"
+    "lint": "eslint src/**/*.js"
   },
   "dependencies": {
     "@prisma/client": "^7.8.0",
