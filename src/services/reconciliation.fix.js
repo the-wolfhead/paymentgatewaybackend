@@ -1,7 +1,7 @@
 // src/services/reconciliation.fix.js
 
 import { prisma } from "../config/prisma.js";
-import { createDoubleEntry } from "./doubleLedger.service.js";
+import { createMultiEntry } from "./doubleLedger.service.js";
 
 export const fixMissingTransaction = async (txn) => {
   const walletAccount = await prisma.account.findFirst({
@@ -14,7 +14,7 @@ export const fixMissingTransaction = async (txn) => {
 
   if (!walletAccount || !systemAccount) return;
 
-  await createDoubleEntry({
+  await createMultiEntry({
     debitAccountId: systemAccount.id,
     creditAccountId: walletAccount.id,
     amount: txn.amount,
