@@ -73,7 +73,7 @@ model Transaction {
   userId           String
   type             TransactionType
   channel          TransactionChannel
-  amount           BigInt
+  amount           Decimal            @db.Decimal(20, 2)
   currency         String             @default("NGN")
   status           TransactionStatus  @default(PENDING)
   reference        String?            @unique
@@ -82,6 +82,7 @@ model Transaction {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime
   User             User               @relation(fields: [userId], references: [id])
+  entries          LedgerEntry[]
 }
 
 model User {
@@ -105,6 +106,39 @@ model User {
   FavoriteDoctor FavoriteDoctor[]
   Transaction    Transaction[]
   Wallet         Wallet?
+  accounts       Account[]
+}
+
+model Account {
+  id            String      @id @default(uuid())
+  userId        String?
+  walletId      String?
+  accountNumber String      @unique
+  type          AccountType
+  currency      String      @default("NGN")
+  createdAt     DateTime    @default(now())
+
+  user    User?    @relation(fields: [userId], references: [id])
+  wallet  Wallet?  @relation(fields: [walletId], references: [id])
+  entries LedgerEntry[]
+
+  @@index([userId])
+}
+
+model LedgerEntry {
+  id            String      @id @default(uuid())
+  transactionId String
+  accountId     String
+  entryType     EntryType
+  amount        Decimal     @db.Decimal(20, 2)
+  narration     String?
+  createdAt     DateTime    @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account     Account     @relation(fields: [accountId], references: [id])
+
+  @@index([transactionId])
+  @@index([accountId])
 }
 
 model Wallet {
@@ -114,6 +148,31 @@ model Wallet {
   createdAt DateTime @default(now())
   updatedAt DateTime
   User      User     @relation(fields: [userId], references: [id])
+}
+
+model ReconciliationLog {
+  id            String   @id @default(uuid())
+  reference     String
+  palmpayAmount Decimal  @db.Decimal(20, 2)
+  ledgerAmount  Decimal  @db.Decimal(20, 2)
+  difference    Decimal  @db.Decimal(20, 2)
+  status        String   // MATCHED | MISMATCH
+  createdAt     DateTime @default(now())
+
+  @@index([reference])
+}
+
+model Escrow {
+  id          String        @id @default(uuid())
+  buyerId     String
+  sellerId    String
+  amount      Decimal       @db.Decimal(20, 2)
+  status      EscrowStatus  @default(PENDING)
+  reference   String        @unique
+  createdAt   DateTime      @default(now())
+
+  buyer User @relation("EscrowBuyer", fields: [buyerId], references: [id])
+  seller User @relation("EscrowSeller", fields: [sellerId], references: [id])
 }
 
 enum TransactionChannel {
@@ -134,4 +193,24 @@ enum TransactionType {
   TOPUP
   PAYMENT
   REFUND
+}
+
+enum AccountType {
+  USER
+  SYSTEM
+  ESCROW
+  FEES
+}
+
+enum EntryType {
+  DEBIT
+  CREDIT
+}
+
+enum EscrowStatus {
+  PENDING
+  FUNDED
+  RELEASED
+  CANCELLED
+  REFUNDED
 }
