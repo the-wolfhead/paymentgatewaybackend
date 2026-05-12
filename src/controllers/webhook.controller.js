@@ -1,7 +1,7 @@
 // src/controllers/webhook.controller.js
 import { verifyPalmPaySignature } from '../utils/verifySignature.js';
 import { paymentQueue } from '../jobs/queue.js';
-import prisma from '../config/prisma.js';
+import { prisma } from '../config/prisma.js';
 
 export const palmpayWebhook = async (req, res) => {
   try {
