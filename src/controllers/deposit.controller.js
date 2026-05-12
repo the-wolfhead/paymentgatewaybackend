@@ -1,5 +1,5 @@
 // src/controllers/deposit.controller.js
-import prisma from '../config/prisma.js';
+import {prisma} from '../config/prisma.js';
 import { palmPayCreateDeposit } from '../services/palmpayService.js';
 
 export const initiateDeposit = async (req, res) => {
