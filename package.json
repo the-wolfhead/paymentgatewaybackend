@@ -23,12 +23,13 @@
     "morgan": "^1.10.0"
   },
   "devDependencies": {
-    "eslint": "^9.0.0",
+    "eslint": "^8.57.1",
     "eslint-config-standard": "^17.1.0",
     "eslint-plugin-import": "^2.31.0",
-    "eslint-plugin-n": "^17.0.0",
-    "eslint-plugin-promise": "^7.0.0",
-    "nodemon": "^3.1.4"
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-promise": "^6.0.0",
+    "nodemon": "^3.1.4",
+    "remove": "^0.1.5"
   },
   "engines": {
     "node": ">=18.0.0"
