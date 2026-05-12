@@ -3,14 +3,15 @@ import express from 'express';
 import transferRoutes from './routes/transfer.routes.js';
 import withdrawalRoutes from "./routes/withdrawal.routes.js";
 import escrowRoutes from "./routes/escrow.routes.js";
-import webhookRoutes from "./routes/webhook.routes.js";   // ← Add this
+import webhookRoutes from "./routes/webhook.routes.js";
+import depositRoutes from "./routes/deposit.routes.js";     // ← Add this
 
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Security & logging (recommended)
+// Middleware
 app.use(require('helmet')());
 app.use(require('morgan')('dev'));
 app.use(require('cors')());
@@ -19,10 +20,11 @@ app.use(require('cors')());
 app.use('/api/transfer', transferRoutes);
 app.use("/api/withdraw", withdrawalRoutes);
 app.use("/api/escrow", escrowRoutes);
-app.use("/api/webhooks", webhookRoutes);     // ← Important
+app.use("/api/deposit", depositRoutes);           // ← New
+app.use("/api/webhooks", webhookRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ message: 'Payment Gateway Backend is running' });
+  res.json({ message: 'Payment Gateway Backend is running 🚀' });
 });
 
 const PORT = process.env.PORT || 5000;
