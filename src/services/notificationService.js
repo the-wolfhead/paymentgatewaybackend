@@ -1,9 +1,16 @@
 // src/services/notificationService.js
 import axios from 'axios';
 
-const BACKEND_ZHS_URL = process.env.BACKEND_ZHS_URL;
+const BACKEND_ZHS_URL = "https://zhs-backend-1.onrender.com";
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
+if (!INTERNAL_API_KEY) {
+  console.warn("⚠️ INTERNAL_API_KEY is missing in .env file!");
+}
+
+/**
+ * Notify backendzhs after successful payment
+ */
 export const notifyBackendZHS = async (data) => {
   const requestId = `NOTIF_${Date.now()}`;
 
@@ -16,27 +23,35 @@ export const notifyBackendZHS = async (data) => {
       time: data.time,
       fee: data.fee,
       paymentReference: data.paymentReference,
-      source: "PAYMENT_GATEWAY",           // ← Important flag
+      source: "PAYMENT_GATEWAY",
       metadata: data.metadata || {}
     };
 
     const response = await axios.post(
-      `${BACKEND_ZHS_URL}/api/appointments/create`,   // Use existing endpoint
+      `${BACKEND_ZHS_URL}/api/appointments/create`,
       payload,
       {
         headers: {
           'Content-Type': 'application/json',
           'X-Internal-Key': INTERNAL_API_KEY,
         },
-        timeout: 8000,
+        timeout: 10000,
       }
     );
 
-    console.log(`[${requestId}] ✅ backendzhs notified successfully`);
+    console.log(`[${requestId}] ✅ Successfully notified backendzhs`);
     return response.data;
 
   } catch (error) {
-    console.error(`[${requestId}] Notification failed:`, error.message);
+    console.error(`[${requestId}] ❌ Notification to backendzhs failed:`);
+    
+    if (error.response) {
+      console.error("Status:", error.response.status);
+      console.error("Response:", error.response.data);
+    } else {
+      console.error(error.message);
+    }
+
     return { success: false, error: error.message };
   }
 };
