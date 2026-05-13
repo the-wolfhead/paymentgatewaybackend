@@ -1,5 +1,5 @@
 // src/controllers/deposit.controller.js
-import {prisma} from '../config/prisma.js';
+import prisma from '../config/prisma.js';
 import { palmPayCreateDeposit } from '../services/palmpayService.js';
 
 export const initiateDeposit = async (req, res) => {
@@ -8,63 +8,55 @@ export const initiateDeposit = async (req, res) => {
   try {
     const { amount, gateway = 'PALMPAY', description, userId, metadata = {} } = req.body;
 
-    // === Input Validation ===
-    if (!userId) {
+    if (!userId || !amount || Number(amount) <= 0) {
       return res.status(400).json({
         success: false,
-        message: "userId is required",
-        requestId,
-      });
-    }
-
-    if (!amount || Number(amount) <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Valid amount is required",
+        message: "userId and valid amount are required",
         requestId,
       });
     }
 
     const finalAmount = Number(amount);
     const reference = `DEP_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const transactionId = `txn_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const now = new Date();
 
-    // === Create Transaction Record ===
-   const transaction = await prisma.transaction.create({
+    const transaction = await prisma.transaction.create({
       data: {
-        id: `txn_${Date.now()}_${Math.floor(Math.random() * 10000)}`, // Generate ID manually
+        id: transactionId,
         userId,
-        type: "DEPOSIT",                    // Must match your TransactionType enum
-        channel: "MOBILE_APP",              // Must match your TransactionChannel enum
+        type: "DEPOSIT",
+        channel: "MOBILE_APP",
         amount: finalAmount,
         currency: "NGN",
         status: "PENDING",
         reference,
-        meta: {                             // Note: Your model uses "meta", not "metadata"
-          ...metadata,
-          initiatedAt: new Date().toISOString(),
-        },
         description: description || `Deposit via ${gateway}`,
+        meta: {
+          ...metadata,
+          initiatedAt: now.toISOString(),
+        },
+        createdAt: now,
+        updatedAt: now,           // ← Required by your current schema
       }
     });
 
     let gatewayResponse = null;
 
-    // === Process Payment with Gateway ===
     if (gateway.toUpperCase() === 'PALMPAY') {
       try {
         gatewayResponse = await palmPayCreateDeposit({
           orderNo: reference,
           amount: finalAmount,
           description: description || "Medical Appointment Payment",
-          returnUrl: metadata.returnUrl || `${process.env.FRONTEND_URL}/payment-success?ref=${reference}`,
+          returnUrl: `${process.env.FRONTEND_URL || 'https://your-frontend.com'}/payment-success?ref=${reference}`,
         });
       } catch (gatewayError) {
-        console.error(`[${requestId}] PalmPay API Error:`, gatewayError.response?.data || gatewayError.message);
+        console.error(`[${requestId}] PalmPay Error:`, gatewayError.message);
 
-        // Update transaction as failed
         await prisma.transaction.update({
           where: { id: transaction.id },
-          data: { status: "FAILED", gatewayResponse: gatewayError.response?.data }
+          data: { status: "FAILED", updatedAt: new Date() }
         });
 
         return res.status(502).json({
@@ -76,58 +68,38 @@ export const initiateDeposit = async (req, res) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: `Gateway '${gateway}' is not supported yet`,
+        message: `Gateway ${gateway} is not supported`,
         requestId,
       });
     }
 
-    // === Update Transaction with Gateway Data ===
-    const updatedTransaction = await prisma.transaction.update({
+    // Update transaction with gateway response
+    await prisma.transaction.update({
       where: { id: transaction.id },
       data: {
-        gatewayReference: gatewayResponse?.orderNo || gatewayResponse?.data?.orderNo,
-        metadata: {
-          ...transaction.metadata,
-          checkoutUrl: gatewayResponse?.checkoutUrl || gatewayResponse?.data?.checkoutUrl,
-          gatewayRawResponse: gatewayResponse,
-        }
+        gatewayReference: gatewayResponse?.orderNo,
+        meta: {
+          ...(transaction.meta || {}),
+          checkoutUrl: gatewayResponse?.checkoutUrl,
+          gatewayRaw: gatewayResponse,
+        },
+        updatedAt: new Date()
       }
     });
 
-    // === Success Response ===
-    return res.status(200).json({
+    return res.json({
       success: true,
+      reference: transaction.reference,
+      checkoutUrl: gatewayResponse?.checkoutUrl,
       message: "Deposit initiated successfully",
-      reference: updatedTransaction.reference,
-      checkoutUrl: gatewayResponse?.checkoutUrl || gatewayResponse?.data?.checkoutUrl,
       requestId,
     });
 
   } catch (error) {
     console.error(`[${requestId}] Deposit Initiation Error:`, error);
-
-    // Handle Prisma-specific errors
-    if (error.code) {
-      if (error.code === 'P2002') {
-        return res.status(409).json({
-          success: false,
-          message: "Duplicate reference error",
-          requestId,
-        });
-      }
-      if (error.code === 'P2025') {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-          requestId,
-        });
-      }
-    }
-
-    // Generic server error (never expose internal details in production)
     return res.status(500).json({
       success: false,
-      message: "An unexpected error occurred while processing your payment",
+      message: "Failed to initiate payment. Please try again.",
       requestId,
     });
   }
