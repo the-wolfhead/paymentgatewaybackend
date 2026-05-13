@@ -25,7 +25,7 @@ export const initiateDeposit = async (req, res) => {
       data: {
         id: transactionId,
         userId,
-        type: "DEPOSIT",
+        type: "PAYMENT",
         channel: "MOBILE_APP",
         amount: finalAmount,
         currency: "NGN",
