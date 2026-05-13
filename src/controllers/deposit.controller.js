@@ -32,6 +32,7 @@ export const initiateDeposit = async (req, res) => {
     const transaction = await prisma.transaction.create({
       data: {
         userId,
+        id: `txn_${Date.now()}_${Math.floor(Math.random() * 10000)}`, // Generate ID manually
         type: "DEPOSIT",
         amount: finalAmount,
         currency: "NGN",
