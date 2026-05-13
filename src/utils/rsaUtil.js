@@ -3,26 +3,22 @@ import crypto from 'crypto';
 
 export class RsaUtil {
   /**
-   * Sign data using your Base64 private key
+   * Sign data - Most reliable version for PalmPay
    */
   static sign(privateKeyBase64, dataToSign) {
     try {
-      // Convert Base64 to Buffer
-      const privateKeyBuffer = Buffer.from(privateKeyBase64, 'base64');
+      // Convert Base64 to PEM format (most compatible)
+      const pemKey = `-----BEGIN PRIVATE KEY-----\n${privateKeyBase64.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----`;
 
       const signer = crypto.createSign('RSA-SHA1');
       signer.update(dataToSign, 'utf8');
-      
-      // Sign with explicit padding
-      const signature = signer.sign({
-        key: privateKeyBuffer,
-        padding: crypto.constants.RSA_PKCS1_PADDING,
-      });
+
+      const signature = signer.sign(pemKey);
 
       return signature.toString('base64');
     } catch (error) {
       console.error('RSA Sign Error Details:', error.message);
-      throw new Error('Failed to generate signature. Please check your private key.');
+      throw new Error('Failed to generate signature. Check private key format.');
     }
   }
 
@@ -31,30 +27,16 @@ export class RsaUtil {
    */
   static verify(publicKeyBase64, dataToVerify, signatureBase64) {
     try {
-      const publicKeyBuffer = Buffer.from(publicKeyBase64, 'base64');
-      const signatureBuffer = Buffer.from(signatureBase64, 'base64');
+      const pemPublicKey = `-----BEGIN PUBLIC KEY-----\n${publicKeyBase64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
 
       const verifier = crypto.createVerify('RSA-SHA1');
       verifier.update(dataToVerify, 'utf8');
+      const signatureBuffer = Buffer.from(signatureBase64, 'base64');
 
-      return verifier.verify(publicKeyBuffer, signatureBuffer);
+      return verifier.verify(pemPublicKey, signatureBuffer);
     } catch (error) {
       console.error('RSA Verify Error:', error.message);
       return false;
     }
-  }
-
-  // Optional: Generate new keys if needed
-  static generateKeyPair() {
-    const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: 'spki', format: 'der' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'der' },
-    });
-
-    return {
-      privateKey: privateKey.toString('base64'),
-      publicKey: publicKey.toString('base64'),
-    };
   }
 }
