@@ -26,7 +26,7 @@ export const initiateDeposit = async (req, res) => {
         id: transactionId,
         userId,
         type: "PAYMENT",
-        channel: "MOBILE_APP",
+        channel: "PALMPAY",
         amount: finalAmount,
         currency: "NGN",
         status: "PENDING",
