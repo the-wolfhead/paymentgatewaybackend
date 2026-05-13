@@ -31,9 +31,9 @@ export const initiateDeposit = async (req, res) => {
         currency: "NGN",
         status: "PENDING",
         reference,
-        description: description || `Deposit via ${gateway}`,
-        meta: {
+        meta: {                    // ← This is the correct field name in your schema
           ...metadata,
+          description: description || `Appointment with doctor`, // Store description inside meta
           initiatedAt: now.toISOString(),
         },
         createdAt: now,
