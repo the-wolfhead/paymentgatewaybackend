@@ -29,21 +29,21 @@ export const initiateDeposit = async (req, res) => {
     const reference = `DEP_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
     // === Create Transaction Record ===
-    const transaction = await prisma.transaction.create({
+   const transaction = await prisma.transaction.create({
       data: {
-        userId,
         id: `txn_${Date.now()}_${Math.floor(Math.random() * 10000)}`, // Generate ID manually
-        type: "DEPOSIT",
+        userId,
+        type: "DEPOSIT",                    // Must match your TransactionType enum
+        channel: "MOBILE_APP",              // Must match your TransactionChannel enum
         amount: finalAmount,
         currency: "NGN",
-        gateway: gateway.toUpperCase(),
-        reference,
         status: "PENDING",
-        description: description || `Deposit via ${gateway}`,
-        metadata: {
+        reference,
+        meta: {                             // Note: Your model uses "meta", not "metadata"
           ...metadata,
           initiatedAt: new Date().toISOString(),
         },
+        description: description || `Deposit via ${gateway}`,
       }
     });
 
