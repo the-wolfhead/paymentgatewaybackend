@@ -21,7 +21,6 @@ export const initiateDeposit = async (req, res) => {
     const transactionId = `txn_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const now = new Date();
 
-    // Create transaction record
     const transaction = await prisma.transaction.create({
       data: {
         id: transactionId,
@@ -32,13 +31,13 @@ export const initiateDeposit = async (req, res) => {
         currency: "NGN",
         status: "PENDING",
         reference,
-        description: description || `Appointment Payment`,
-        meta: {
+        meta: {                    // ← This is the correct field name in your schema
           ...metadata,
+          description: description || `Appointment with doctor`, // Store description inside meta
           initiatedAt: now.toISOString(),
         },
         createdAt: now,
-        updatedAt: now,
+        updatedAt: now,           // ← Required by your current schema
       }
     });
 
@@ -50,11 +49,10 @@ export const initiateDeposit = async (req, res) => {
           orderNo: reference,
           amount: finalAmount,
           description: description || "Medical Appointment Payment",
-          // Use a clean, short return URL for now
           returnUrl: `https://paymentgatewaybackend-580i.onrender.com/api/payment/success?ref=${reference}`,
         });
       } catch (gatewayError) {
-        console.error(`[${requestId}] PalmPay Gateway Error:`, gatewayError.message);
+        console.error(`[${requestId}] PalmPay Error:`, gatewayError.message);
 
         await prisma.transaction.update({
           where: { id: transaction.id },
@@ -70,7 +68,7 @@ export const initiateDeposit = async (req, res) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: `Gateway ${gateway} is not supported yet`,
+        message: `Gateway ${gateway} is not supported`,
         requestId,
       });
     }
@@ -79,10 +77,11 @@ export const initiateDeposit = async (req, res) => {
     await prisma.transaction.update({
       where: { id: transaction.id },
       data: {
-        gatewayReference: gatewayResponse?.orderNo || gatewayResponse?.data?.orderNo,
+        gatewayReference: gatewayResponse?.orderNo,
         meta: {
           ...(transaction.meta || {}),
-          checkoutUrl: gatewayResponse?.checkoutUrl || gatewayResponse?.data?.checkoutUrl,
+          checkoutUrl: gatewayResponse?.checkoutUrl,
+          gatewayRaw: gatewayResponse,
         },
         updatedAt: new Date()
       }
@@ -91,7 +90,7 @@ export const initiateDeposit = async (req, res) => {
     return res.json({
       success: true,
       reference: transaction.reference,
-      checkoutUrl: gatewayResponse?.checkoutUrl || gatewayResponse?.data?.checkoutUrl,
+      checkoutUrl: gatewayResponse?.checkoutUrl,
       message: "Deposit initiated successfully",
       requestId,
     });
