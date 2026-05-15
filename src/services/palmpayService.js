@@ -3,81 +3,71 @@ import axios from "axios";
 import crypto from "crypto";
 import { RsaUtil } from "../utils/rsaUtil.js";
 
-const BASE_URL = process.env.PALMPAY_BASE_URL || "https://api.palmpay.com";
+const BASE_URL = process.env.PALMPAY_BASE_URL || "https://open-gw-daily.palmpay-inc.com";
+
 const MERCHANT_ID = process.env.PALMPAY_MERCHANT_ID;
 const MERCHANT_PRIVATE_KEY = process.env.PALMPAY_MERCHANT_PRIVATE_KEY;
-
-if (!MERCHANT_ID || !MERCHANT_PRIVATE_KEY) {
-  console.error("❌ CRITICAL: PalmPay Merchant ID or Private Key is missing in .env");
-}
-
-const buildSignString = (obj) => {
-  const data = { ...obj };
-  delete data.sign;
-  return Object.keys(data)
-    .sort()
-    .map(key => `${key}=${data[key]}`)
-    .join('&');
-};
+const AUTH_TOKEN = process.env.PALMPAY_AUTH_TOKEN; // Bearer token from PalmPay
 
 export const palmPayCreateDeposit = async (orderData) => {
   const requestId = `PP_REQ_${Date.now()}`;
 
   try {
+    const requestTime = Date.now();
+    const nonceStr = crypto.randomBytes(16).toString("hex");
+
     const requestBody = {
-      merchantId: MERCHANT_ID,
-      orderNo: orderData.orderNo,
+      requestTime,
+      version: "V1.1",
+      nonceStr,
       amount: Number(orderData.amount),
-      currency: orderData.currency || "NGN",
+      notifyUrl: `${process.env.BASE_URL}/api/webhooks/palmpay`,
+      orderId: orderData.orderNo,
+      title: "Appointment Payment",
       description: orderData.description || "Medical Appointment Payment",
-      notifyUrl: "https://www.google.com",
-      returnUrl: orderData.returnUrl,
-      timestamp: Math.floor(Date.now() / 1000),
-      nonce: crypto.randomBytes(16).toString("hex"),
+      currency: "NGN",
+      callBackUrl: orderData.returnUrl || "https://paymentgatewaybackend-580i.onrender.com/api/payment/success",
+      goodsDetails: '[{"goodsId": "1"}]',
+      customerInfo: JSON.stringify({
+        userId: "user123",
+        userName: "Customer",
+        phone: "08000000000",
+      }),
+      remark: "Appointment Booking",
     };
 
-    // Build sign string
-    const signString = buildSignString(requestBody);
+    // Build sign string (important: follow exact order if specified by PalmPay)
+    const signString = Object.keys(requestBody)
+      .sort()
+      .map(key => `${key}=${requestBody[key]}`)
+      .join('&');
+
     const signature = RsaUtil.sign(MERCHANT_PRIVATE_KEY, signString);
 
-    console.log(`\n[${requestId}] === PALMPAY REQUEST ===`);
-    console.log("Endpoint:", `${BASE_URL}/pay-ins/palmpay-checkout/create-order`);
-    console.log("Merchant ID:", MERCHANT_ID);
-    console.log("Order No:", requestBody.orderNo);
+    console.log(`[${requestId}] Sending to PalmPay...`);
+    console.log("Order ID:", requestBody.orderId);
     console.log("Amount:", requestBody.amount);
-    console.log("Return URL:", requestBody.returnUrl);
-    console.log("Sign String:", signString);
 
     const response = await axios.post(
-      `${BASE_URL}/pay-ins/palmpay-checkout/create-order`,
+      `${BASE_URL}/api/v2/payment/merchant/createorder`,
       requestBody,
       {
         headers: {
-          "Content-Type": "application/json",
-          "Sign": signature,
-          "Merchant-Id": MERCHANT_ID,
+          'Accept': 'application/json, text/plain, */*',
+          'CountryCode': 'NG',
+          'Authorization': `Bearer ${AUTH_TOKEN}`,
+          'Signature': signature,
+          'Content-Type': 'application/json',
         },
-        timeout: 20000,
+        timeout: 15000,
       }
     );
 
-    console.log(`[${requestId}] ✅ PalmPay Response Success:`);
-    console.log(JSON.stringify(response.data, null, 2));
-
+    console.log(`[${requestId}] PalmPay Response:`, JSON.stringify(response.data, null, 2));
     return response.data;
 
   } catch (error) {
-    console.error(`\n[${requestId}] ❌ PALMPAY ERROR OCCURRED`);
-
-    if (error.response) {
-      console.error("Status Code:", error.response.status);
-      console.error("Response Body:", JSON.stringify(error.response.data, null, 2));
-    } else if (error.request) {
-      console.error("No response received from PalmPay (Timeout or Network Issue)");
-    } else {
-      console.error("Request Setup Error:", error.message);
-    }
-
+    console.error(`[${requestId}] PalmPay Error:`, error.response?.data || error.message);
     throw error;
   }
 };
