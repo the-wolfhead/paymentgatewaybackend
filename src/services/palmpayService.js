@@ -30,7 +30,7 @@ export const palmPayCreateDeposit = async (orderData) => {
       amount: Number(orderData.amount),
       currency: orderData.currency || "NGN",
       description: orderData.description || "Medical Appointment Payment",
-      notifyUrl: `${process.env.BASE_URL || 'https://paymentgatewaybackend-580i.onrender.com'}/api/webhooks/palmpay`,
+      notifyUrl: "https://www.google.com",
       returnUrl: orderData.returnUrl,
       timestamp: Math.floor(Date.now() / 1000),
       nonce: crypto.randomBytes(16).toString("hex"),
