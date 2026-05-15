@@ -49,7 +49,7 @@ export const initiateDeposit = async (req, res) => {
           orderNo: reference,
           amount: finalAmount,
           description: description || "Medical Appointment Payment",
-          returnUrl: "https://paymentgatewaybackend-580i.onrender.com/api/payment/success",
+          returnUrl: "https://google.com",
         });
       } catch (gatewayError) {
         console.error(`[${requestId}] PalmPay Error:`, gatewayError.message);
