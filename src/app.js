@@ -22,32 +22,50 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
-// API Routes
+// Main Routes
 app.use('/api/transfer', transferRoutes);
 app.use('/api/withdraw', withdrawalRoutes);
 app.use('/api/escrow', escrowRoutes);
-app.use('/api/deposit', depositRoutes);        // Added
-app.use('/api/webhooks', webhookRoutes);       // Added
+app.use('/api/deposit', depositRoutes);
+
+// Webhook Routes
+app.use('/api/webhooks', webhookRoutes);
+
+// Success Page Route (for PalmPay returnUrl)
+app.get('/api/payment/success', (req, res) => {
+  const { ref } = req.query;
+  
+  console.log(`Payment success page accessed with reference: ${ref}`);
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Payment Successful</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+          h1 { color: #22C55E; }
+        </style>
+      </head>
+      <body>
+        <h1>✅ Payment Successful!</h1>
+        <p>Reference: <strong>${ref || 'N/A'}</strong></p>
+        <p>Your appointment has been confirmed.</p>
+        <p>You can close this window.</p>
+      </body>
+    </html>
+  `);
+});
 
 // Health Check
 app.get('/', (req, res) => {
   res.json({ 
     message: 'Payment Gateway Backend is running 🚀',
-    status: 'OK',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Global Error Handler
-app.use((err, req, res, next) => {
-  console.error('Global Error:', err);
-  res.status(500).json({
-    success: false,
-    message: 'Internal server error'
+    status: 'OK'
   });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`✅ Server is running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
