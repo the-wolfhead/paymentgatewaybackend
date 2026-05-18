@@ -36,11 +36,11 @@ export const palmPayCreateDeposit = async (orderData) => {
       .map(key => `${key}=${requestBody[key]}`)
       .join('&');
     const signature = RsaUtil.sign(MERCHANT_PRIVATE_KEY, signString);
-    console.log([${requestId}] Sending to PalmPay...);
+    console.log([`${requestId}] Sending to PalmPay...`);
     console.log("Order ID:", requestBody.orderId);
     console.log("Amount:", requestBody.amount);
     const response = await axios.post(
-      ${BASE_URL}/api/v2/payment/merchant/createorder,
+      `${BASE_URL}/api/v2/payment/merchant/createorder`,
       requestBody,
       {
         headers: {
@@ -53,10 +53,10 @@ export const palmPayCreateDeposit = async (orderData) => {
         timeout: 15000,
       }
     );
-    console.log([${requestId}] PalmPay Response:, JSON.stringify(response.data, null, 2));
+    console.log([`${requestId}`] PalmPay Response:, JSON.stringify(response.data, null, 2));
     return response.data;
   } catch (error) {
-    console.error([${requestId}] PalmPay Error:, error.response?.data || error.message);
+    console.error([`${requestId}`] PalmPay Error:, error.response?.data || error.message);
     throw error;
   }
 };
