@@ -50,7 +50,7 @@ export const palmPayCreateDeposit = async (orderData) => {
         headers: {
           'Accept': 'application/json, text/plain, */*',
           'CountryCode': 'NG',
-          'Authorization': Bearer ${AUTH_TOKEN},
+          'Authorization': `Bearer ${AUTH_TOKEN}`,
           'Signature': signature,
           'Content-Type': 'application/json',
         },
