@@ -36,9 +36,13 @@ export const palmPayCreateDeposit = async (orderData) => {
       .map(key => `${key}=${requestBody[key]}`)
       .join('&');
     const signature = RsaUtil.sign(MERCHANT_PRIVATE_KEY, signString);
-    console.log([${requestId}] Sending to PalmPay...);
-    console.log("Order ID:", requestBody.orderId);
-    console.log("Amount:", requestBody.amount);
+   // === DETAILED LOGGING ===
+    console.log(`\n[${requestId}] === SENDING TO PALMPAY ===`);
+    console.log("URL:", `${BASE_URL}/api/v2/payment/merchant/createorder`);
+    console.log("Merchant ID:", MERCHANT_ID);
+    console.log("Order ID:", requestBody.orderId);
+    console.log("Amount:", requestBody.amount);
+    console.log("CallBackUrl:", requestBody.callBackUrl);
     const response = await axios.post(
       `${BASE_URL}/api/v2/payment/merchant/createorder`,
       requestBody,
