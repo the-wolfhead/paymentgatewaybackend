@@ -4,10 +4,9 @@ import crypto from "crypto";
 import { RsaUtil } from "../utils/rsaUtil.js";
 
 const BASE_URL = process.env.PALMPAY_BASE_URL || "https://open-gw-daily.palmpay-inc.com";
-
 const MERCHANT_ID = process.env.PALMPAY_MERCHANT_ID;
 const MERCHANT_PRIVATE_KEY = process.env.PALMPAY_MERCHANT_PRIVATE_KEY;
-const AUTH_TOKEN = process.env.PALMPAY_AUTH_TOKEN; // Bearer token from PalmPay
+const AUTH_TOKEN = process.env.PALMPAY_AUTH_TOKEN;
 
 export const palmPayCreateDeposit = async (orderData) => {
   const requestId = `PP_REQ_${Date.now()}`;
@@ -26,7 +25,7 @@ export const palmPayCreateDeposit = async (orderData) => {
       title: "Appointment Payment",
       description: orderData.description || "Medical Appointment Payment",
       currency: "NGN",
-      callBackUrl: orderData.returnUrl || "https://paymentgatewaybackend-580i.onrender.com/api/payment/success",
+      callBackUrl: orderData.returnUrl,
       goodsDetails: '[{"goodsId": "1"}]',
       customerInfo: JSON.stringify({
         userId: "user123",
@@ -36,7 +35,7 @@ export const palmPayCreateDeposit = async (orderData) => {
       remark: "Appointment Booking",
     };
 
-    // Build sign string (important: follow exact order if specified by PalmPay)
+    // Build sign string
     const signString = Object.keys(requestBody)
       .sort()
       .map(key => `${key}=${requestBody[key]}`)
@@ -44,10 +43,26 @@ export const palmPayCreateDeposit = async (orderData) => {
 
     const signature = RsaUtil.sign(MERCHANT_PRIVATE_KEY, signString);
 
-    console.log(`[${requestId}] Sending to PalmPay...`);
-    console.log("Order ID:", requestBody.orderId);
-    console.log("Amount:", requestBody.amount);
+    // ==================== DETAILED LOGGING ====================
+    console.log(`\n[${requestId}] === SENDING REQUEST TO PALMPAY ===`);
+    console.log("Full URL:", `${BASE_URL}/api/v2/payment/merchant/createorder`);
+    
+    console.log("\n📦 Request Body:");
+    console.log(JSON.stringify(requestBody, null, 2));
 
+    console.log("\n🔑 Headers:");
+    console.log({
+      'Accept': 'application/json, text/plain, */*',
+      'CountryCode': 'NG',
+      'Authorization': `Bearer ${AUTH_TOKEN ? AUTH_TOKEN.substring(0, 10) + '...' : 'MISSING'}`,
+      'Signature': signature,
+      'Content-Type': 'application/json',
+    });
+
+    console.log("\n🔐 Sign String (first 200 chars):");
+    console.log(signString.substring(0, 200) + "...");
+
+    // ==================== SEND REQUEST ====================
     const response = await axios.post(
       `${BASE_URL}/api/v2/payment/merchant/createorder`,
       requestBody,
@@ -63,11 +78,23 @@ export const palmPayCreateDeposit = async (orderData) => {
       }
     );
 
-    console.log(`[${requestId}] PalmPay Response:`, JSON.stringify(response.data, null, 2));
+    console.log(`\n[${requestId}] ✅ PalmPay Response:`);
+    console.log(JSON.stringify(response.data, null, 2));
+
     return response.data;
 
   } catch (error) {
-    console.error(`[${requestId}] PalmPay Error:`, error.response?.data || error.message);
+    console.error(`\n[${requestId}] ❌ PALMPAY REQUEST FAILED`);
+    
+    if (error.response) {
+      console.error("Status:", error.response.status);
+      console.error("Response Data:", JSON.stringify(error.response.data, null, 2));
+    } else if (error.request) {
+      console.error("No response received from PalmPay");
+    } else {
+      console.error("Error:", error.message);
+    }
+
     throw error;
   }
 };
