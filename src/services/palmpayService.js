@@ -7,7 +7,7 @@ const MERCHANT_ID = process.env.PALMPAY_MERCHANT_ID;
 const MERCHANT_PRIVATE_KEY = process.env.PALMPAY_MERCHANT_PRIVATE_KEY;
 const AUTH_TOKEN = process.env.PALMPAY_AUTH_TOKEN; // Bearer token from PalmPay
 export const palmPayCreateDeposit = async (orderData) => {
-  const requestId = PP_REQ_${Date.now()};
+  const requestId = `PP_REQ_${Date.now()}`;
   try {
     const requestTime = Date.now();
     const nonceStr = crypto.randomBytes(16).toString("hex");
