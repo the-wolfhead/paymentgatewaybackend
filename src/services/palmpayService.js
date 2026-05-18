@@ -33,7 +33,7 @@ export const palmPayCreateDeposit = async (orderData) => {
     // Build sign string (important: follow exact order if specified by PalmPay)
     const signString = Object.keys(requestBody)
       .sort()
-      .map(key => `${key}`=`${requestBody[key]}`)
+      .map(key => `${key}=${requestBody[key]}`)
       .join('&');
     const signature = RsaUtil.sign(MERCHANT_PRIVATE_KEY, signString);
     console.log([${requestId}] Sending to PalmPay...);
