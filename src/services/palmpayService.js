@@ -16,7 +16,7 @@ export const palmPayCreateDeposit = async (orderData) => {
       version: "V1.1",
       nonceStr,
       amount: Number(orderData.amount),
-      notifyUrl: ${process.env.BASE_URL}/api/webhooks/palmpay,
+      notifyUrl: `${process.env.BASE_URL}/api/webhooks/palmpay`,
       orderId: orderData.orderNo,
       title: "Appointment Payment",
       description: orderData.description || "Medical Appointment Payment",
