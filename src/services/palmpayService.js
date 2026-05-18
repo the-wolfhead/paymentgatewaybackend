@@ -57,10 +57,10 @@ export const palmPayCreateDeposit = async (orderData) => {
         timeout: 15000,
       }
     );
-    console.log([`${requestId}`] PalmPay Response:, JSON.stringify(response.data, null, 2));
+    console.log(`[${requestId}] PalmPay Response:`, JSON.stringify(response.data, null, 2));
     return response.data;
   } catch (error) {
-    console.error([`${requestId}`] PalmPay Error:, error.response?.data || error.message);
+    console.error(`[${requestId}] PalmPay Error:`, error.response?.data || error.message);
     throw error;
   }
 };
