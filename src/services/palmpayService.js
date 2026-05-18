@@ -36,7 +36,7 @@ export const palmPayCreateDeposit = async (orderData) => {
       .map(key => `${key}=${requestBody[key]}`)
       .join('&');
     const signature = RsaUtil.sign(MERCHANT_PRIVATE_KEY, signString);
-    console.log([`${requestId}`] Sending to PalmPay...);
+    console.log([${requestId}] Sending to PalmPay...);
     console.log("Order ID:", requestBody.orderId);
     console.log("Amount:", requestBody.amount);
     const response = await axios.post(
