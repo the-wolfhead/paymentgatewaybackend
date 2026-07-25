@@ -29,7 +29,7 @@ export const palmpayWebhook = async (req, res) => {
     // 2. Find transaction
     const transaction = await prisma.transaction.findUnique({
       where: { reference: orderNo },
-      include: { user: true }
+      include: { User: true }
     });
 
     if (!transaction) {
@@ -50,33 +50,35 @@ export const palmpayWebhook = async (req, res) => {
     if (upperStatus === 'SUCCESS' || upperStatus === 'COMPLETED') {
       newStatus = 'SUCCESS';
 
-      // Credit Wallet
-      try {
-        await creditWalletLedger({
-          userId: transaction.userId,
-          amount: parseFloat(amount),
-          reference: transaction.reference,
-          description: `PalmPay Deposit #${transaction.reference}`,
-          gateway: 'PALMPAY',
-          metadata: payload
-        });
-      } catch (ledgerError) {
-        console.error(`[${requestId}] Ledger credit failed:`, ledgerError);
+      // Only credit the wallet for genuine top-ups. An appointment payment
+      // isn't a top-up — the money was spent on the appointment, so crediting
+      // it into "wallet balance" too would double-count it.
+      if (transaction.meta?.purpose === 'WALLET_TOPUP') {
+        try {
+          await creditWalletLedger({
+            userId: transaction.userId,
+            amount: parseFloat(amount),
+            transactionId: transaction.id,
+            description: `PalmPay Deposit #${transaction.reference}`,
+          });
+        } catch (ledgerError) {
+          console.error(`[${requestId}] Ledger credit failed:`, ledgerError);
+        }
       }
 
       // === Notify backendzhs to create appointment ===
-      if (transaction.metadata?.doctor || transaction.metadata?.doctorId) {
+      if (transaction.meta?.doctor || transaction.meta?.doctorId) {
         try {
           await notifyBackendZHS({
             userId: transaction.userId,
-            doctorId: transaction.metadata.doctor?.id || transaction.metadata.doctorId,
-            patientName: transaction.metadata.patientName,
-            date: transaction.metadata.date,
-            time: transaction.metadata.time,
+            doctorId: transaction.meta.doctor?.id || transaction.meta.doctorId,
+            patientName: transaction.meta.patientName,
+            date: transaction.meta.date,
+            time: transaction.meta.time,
             fee: transaction.amount,
             paymentReference: transaction.reference,
             paymentGateway: 'PALMPAY',
-            metadata: transaction.metadata
+            metadata: transaction.meta
           });
         } catch (notifyError) {
           console.error(`[${requestId}] Failed to notify backendzhs:`, notifyError);
@@ -89,8 +91,10 @@ export const palmpayWebhook = async (req, res) => {
       where: { id: transaction.id },
       data: {
         status: newStatus,
-        gatewayResponse: payload,
-        updatedAt: new Date()
+        meta: {
+          ...(transaction.meta || {}),
+          webhookPayload: payload,
+        },
       }
     });
 

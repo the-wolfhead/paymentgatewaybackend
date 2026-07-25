@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Appointment {
@@ -80,20 +81,20 @@ model Transaction {
   paystackResponse Json?
   meta             Json?
   createdAt        DateTime           @default(now())
-  updatedAt        DateTime
+  updatedAt        DateTime           @updatedAt
   User             User               @relation(fields: [userId], references: [id])
   entries          LedgerEntry[]
 }
 
 model User {
-  id             String           @id
+  id             String           @id @default(uuid())
   googleId       String?          @unique
   email          String           @unique
   name           String
   picture        String?
   createdAt      DateTime         @default(now())
   password       String?
-  updatedAt      DateTime
+  updatedAt      DateTime         @updatedAt
   alcoholUse     String?
   allergies      String[]
   bloodGroup     String?
@@ -116,7 +117,7 @@ model Wallet {
   userId    String   @unique
   balance   BigInt   @default(0)
   createdAt DateTime @default(now())
-  updatedAt DateTime
+  updatedAt DateTime @updatedAt
   User      User     @relation(fields: [userId], references: [id])
   accounts  Account[]
 }

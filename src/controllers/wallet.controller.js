@@ -7,9 +7,27 @@ export const getBalance = async (req, res, next) => {
       where: { userId: req.user.id },
     });
 
+    if (!account) {
+      return res.json({ balance: 0 });
+    }
+
     const balance = await getAccountBalance(account.id);
 
     res.json({ balance });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getTransactions = async (req, res, next) => {
+  try {
+    const transactions = await prisma.transaction.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    res.json({ transactions });
   } catch (err) {
     next(err);
   }

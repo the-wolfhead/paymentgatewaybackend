@@ -3,57 +3,37 @@ import crypto from 'crypto';
 
 export class RsaUtil {
   /**
-   * Generate 2048-bit RSA key pair (matches PalmPay Java SDK)
-   */
-  static generateKeyPair() {
-    const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: {
-        type: 'spki',
-        format: 'der',
-      },
-      privateKeyEncoding: {
-        type: 'pkcs8',
-        format: 'der',
-      },
-    });
-
-    return {
-      privateKey: privateKey.toString('base64'),
-      publicKey: publicKey.toString('base64'),
-    };
-  }
-
-  /**
-   * Sign data using RSA-SHA1 (PalmPay standard)
+   * Sign data - Most reliable version for PalmPay
    */
   static sign(privateKeyBase64, dataToSign) {
     try {
-      const privateKeyBuffer = Buffer.from(privateKeyBase64, 'base64');
+      // Convert Base64 to PEM format (most compatible)
+      const pemKey = `-----BEGIN PRIVATE KEY-----\n${privateKeyBase64.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----`;
 
       const signer = crypto.createSign('RSA-SHA1');
       signer.update(dataToSign, 'utf8');
-      const signature = signer.sign(privateKeyBuffer);
+
+      const signature = signer.sign(pemKey);
 
       return signature.toString('base64');
     } catch (error) {
-      console.error('RSA Sign Error:', error.message);
-      throw new Error('Failed to generate signature');
+      console.error('RSA Sign Error Details:', error.message);
+      throw new Error('Failed to generate signature. Check private key format.');
     }
   }
 
   /**
-   * Verify signature using RSA-SHA1
+   * Verify signature
    */
   static verify(publicKeyBase64, dataToVerify, signatureBase64) {
     try {
-      const publicKeyBuffer = Buffer.from(publicKeyBase64, 'base64');
-      const signatureBuffer = Buffer.from(signatureBase64, 'base64');
+      const pemPublicKey = `-----BEGIN PUBLIC KEY-----\n${publicKeyBase64.match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
 
       const verifier = crypto.createVerify('RSA-SHA1');
       verifier.update(dataToVerify, 'utf8');
+      const signatureBuffer = Buffer.from(signatureBase64, 'base64');
 
-      return verifier.verify(publicKeyBuffer, signatureBuffer);
+      return verifier.verify(pemPublicKey, signatureBuffer);
     } catch (error) {
       console.error('RSA Verify Error:', error.message);
       return false;

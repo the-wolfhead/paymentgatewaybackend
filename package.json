@@ -9,20 +9,25 @@
     "dev": "node src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "generate-keys": "node src/scripts/generateKeys.js",
+    "seed": "node scripts/seedSystemAccounts.js",
     "lint": "eslint src/**/*.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "axios": "^1.8.0",
+    "bcryptjs": "^2.4.3",
     "bull": "^4.16.5",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.2",
+    "express-rate-limit": "^7.4.1",
     "helmet": "^8.1.0",
+    "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
-    "redis": "^5.12.1"
+    "node-cron": "^3.0.3",
+    "winston": "^3.15.0"
   },
   "devDependencies": {
     "eslint": "^8.57.1",

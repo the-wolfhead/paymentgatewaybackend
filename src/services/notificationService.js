@@ -28,7 +28,7 @@ export const notifyBackendZHS = async (data) => {
     };
 
     const response = await axios.post(
-      `${BACKEND_ZHS_URL}/api/appointments/create`,
+      `${BACKEND_ZHS_URL}/appointments/create`,
       payload,
       {
         headers: {

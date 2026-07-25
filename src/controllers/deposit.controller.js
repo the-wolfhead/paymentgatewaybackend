@@ -1,69 +1,97 @@
 // src/controllers/deposit.controller.js
-import {prisma} from '../config/prisma.js';
+import { prisma } from '../config/prisma.js';
 import { palmPayCreateDeposit } from '../services/palmpayService.js';
+
+/**
+ * Lets the app poll for the real outcome of a deposit after the user
+ * finishes (or abandons) the PalmPay checkout WebView. The webhook is what
+ * actually flips this to SUCCESS/FAILED once PalmPay confirms — this just
+ * lets the client find out once that's happened.
+ */
+export const getDepositStatus = async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    const transaction = await prisma.transaction.findUnique({
+      where: { reference },
+    });
+
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+
+    return res.json({
+      success: true,
+      status: transaction.status, // PENDING | SUCCESS | FAILED
+      reference: transaction.reference,
+      amount: transaction.amount,
+    });
+  } catch (error) {
+    console.error('Deposit status check error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to check deposit status' });
+  }
+};
 
 export const initiateDeposit = async (req, res) => {
   const requestId = `REQ_${Date.now()}`;
 
   try {
-    const { amount, gateway = 'PALMPAY', description, userId, metadata = {} } = req.body;
+    const { amount, gateway = 'PALMPAY', description, userId, purpose = 'APPOINTMENT', metadata = {} } = req.body;
 
-    // === Input Validation ===
-    if (!userId) {
+    if (!userId || !amount || Number(amount) <= 0) {
       return res.status(400).json({
         success: false,
-        message: "userId is required",
-        requestId,
-      });
-    }
-
-    if (!amount || Number(amount) <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Valid amount is required",
+        message: "userId and valid amount are required",
         requestId,
       });
     }
 
     const finalAmount = Number(amount);
     const reference = `DEP_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const transactionId = `txn_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const now = new Date();
 
-    // === Create Transaction Record ===
+    // Create transaction record
     const transaction = await prisma.transaction.create({
       data: {
+        id: transactionId,
         userId,
-        type: "DEPOSIT",
+        type: "PAYMENT",
+        channel: "CARD",
         amount: finalAmount,
         currency: "NGN",
-        gateway: gateway.toUpperCase(),
-        reference,
         status: "PENDING",
-        description: description || `Deposit via ${gateway}`,
-        metadata: {
+        reference,
+         meta: {                    // ← This is the correct field name in your schema
           ...metadata,
-          initiatedAt: new Date().toISOString(),
+          purpose, // 'APPOINTMENT' | 'WALLET_TOPUP'
+          description: description || `Appointment with doctor`, // Store description inside meta
+          initiatedAt: now.toISOString(),
         },
+        createdAt: now,
+        updatedAt: now,
       }
     });
 
     let gatewayResponse = null;
 
-    // === Process Payment with Gateway ===
     if (gateway.toUpperCase() === 'PALMPAY') {
       try {
         gatewayResponse = await palmPayCreateDeposit({
           orderNo: reference,
           amount: finalAmount,
           description: description || "Medical Appointment Payment",
-          returnUrl: metadata.returnUrl || `${process.env.FRONTEND_URL}/payment-success?ref=${reference}`,
+          
+          // Clean return URL
+          returnUrl: "https://paymentgatewaybackend-580i.onrender.com/api/payment/success?ref=" + reference,
         });
       } catch (gatewayError) {
-        console.error(`[${requestId}] PalmPay API Error:`, gatewayError.response?.data || gatewayError.message);
+        console.error(`[${requestId}] PalmPay Error:`, gatewayError.message || gatewayError);
 
-        // Update transaction as failed
+        // Mark transaction as failed
         await prisma.transaction.update({
           where: { id: transaction.id },
-          data: { status: "FAILED", gatewayResponse: gatewayError.response?.data }
+          data: { status: "FAILED", updatedAt: new Date() }
         });
 
         return res.status(502).json({
@@ -75,58 +103,37 @@ export const initiateDeposit = async (req, res) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: `Gateway '${gateway}' is not supported yet`,
+        message: `Gateway ${gateway} is not supported`,
         requestId,
       });
     }
 
-    // === Update Transaction with Gateway Data ===
-    const updatedTransaction = await prisma.transaction.update({
+    // Update transaction with gateway response
+    await prisma.transaction.update({
       where: { id: transaction.id },
       data: {
-        gatewayReference: gatewayResponse?.orderNo || gatewayResponse?.data?.orderNo,
-        metadata: {
-          ...transaction.metadata,
-          checkoutUrl: gatewayResponse?.checkoutUrl || gatewayResponse?.data?.checkoutUrl,
-          gatewayRawResponse: gatewayResponse,
-        }
+        meta: {
+          ...(transaction.meta || {}),
+          gatewayOrderId: gatewayResponse?.orderId || gatewayResponse?.data?.orderId,
+          checkoutUrl: gatewayResponse?.data?.checkoutUrl || gatewayResponse?.checkoutUrl,
+          rawResponse: gatewayResponse,
+        },
       }
     });
 
-    // === Success Response ===
-    return res.status(200).json({
+    return res.json({
       success: true,
+      reference: transaction.reference,
+      checkoutUrl: gatewayResponse?.data?.checkoutUrl || gatewayResponse?.checkoutUrl,
       message: "Deposit initiated successfully",
-      reference: updatedTransaction.reference,
-      checkoutUrl: gatewayResponse?.checkoutUrl || gatewayResponse?.data?.checkoutUrl,
       requestId,
     });
 
   } catch (error) {
     console.error(`[${requestId}] Deposit Initiation Error:`, error);
-
-    // Handle Prisma-specific errors
-    if (error.code) {
-      if (error.code === 'P2002') {
-        return res.status(409).json({
-          success: false,
-          message: "Duplicate reference error",
-          requestId,
-        });
-      }
-      if (error.code === 'P2025') {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-          requestId,
-        });
-      }
-    }
-
-    // Generic server error (never expose internal details in production)
     return res.status(500).json({
       success: false,
-      message: "An unexpected error occurred while processing your payment",
+      message: "Failed to initiate payment. Please try again.",
       requestId,
     });
   }
