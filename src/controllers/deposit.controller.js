@@ -81,7 +81,8 @@ export const initiateDeposit = async (req, res) => {
           orderNo: reference,
           amount: finalAmount,
           description: description || "Medical Appointment Payment",
-          
+          userId,
+
           // Clean return URL
           returnUrl: "https://paymentgatewaybackend-580i.onrender.com/api/payment/success?ref=" + reference,
         });

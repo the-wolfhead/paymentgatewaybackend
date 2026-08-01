@@ -9,7 +9,6 @@ const required = [
   'JWT_SECRET',
   'PALMPAY_MERCHANT_ID',
   'PALMPAY_MERCHANT_PRIVATE_KEY',
-  'PALMPAY_AUTH_TOKEN',
 ];
 
 export function assertEnv() {
