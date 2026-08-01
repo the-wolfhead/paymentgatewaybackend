@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { RsaUtil } from "../utils/rsaUtil.js";
 
 const BASE_URL =
-  process.env.PALMPAY_BASE_URL || "https://open-gw-sandbox.palmpay-inc.com";
+  process.env.PALMPAY_BASE_URL || "https://open-gw-prod.palmpay-inc.com/";
 const MERCHANT_ID = process.env.PALMPAY_AUTH_TOKEN; // AppId
 const MERCHANT_PRIVATE_KEY = process.env.PALMPAY_MERCHANT_PRIVATE_KEY;
 
@@ -59,7 +59,7 @@ export const palmPayCreateDeposit = async (orderData) => {
       nonceStr,
       amount: Math.round(Number(orderData.amount)), // must be integer
       currency: "NGN",
-      notifyUrl: `${process.env.BASE_URL}/api/webhooks/palmpay`,
+      notifyUrl: `${process.env.BASE_URL}/api/v2/payment/merchant/createorder`,
       orderId: String(orderData.orderNo).slice(0, 32),
       title: orderData.title || "Appointment Payment",
       description: orderData.description || "Medical Appointment Payment",
