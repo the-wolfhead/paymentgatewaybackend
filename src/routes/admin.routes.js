@@ -1,15 +1,30 @@
 // src/routes/admin.routes.js
 import express from 'express';
-import { authMiddleware } from '../middleware/auth.middleware.js';
-import { getReconciliationLogs, getAllTransactions } from '../controllers/admin.controller.js';
+import { verifyAdminToken, requireRole, ANY_STAFF } from '../middleware/adminAuth.middleware.js';
+import {
+  getReconciliationLogs,
+  getAllTransactions,
+  getStats,
+  getTransactionDetail,
+  retryTransaction,
+  markTransactionFailed,
+  listAccounts,
+} from '../controllers/admin.controller.js';
 
 const router = express.Router();
 
-// NOTE: authMiddleware only confirms the requester has a valid JWT, not that
-// they're actually an admin — there's no role/permission field anywhere in
-// the schema yet. Anyone with a valid token can currently hit these routes.
-// Add a role check here once the User model has some notion of admin.
-router.get('/reconciliation-logs', authMiddleware, getReconciliationLogs);
-router.get('/transactions', authMiddleware, getAllTransactions);
+// Every route requires a valid admin-dashboard JWT (issued by the ZHS
+// backend) with some staff role, plus per-route checks below.
+router.use(verifyAdminToken, requireRole(...ANY_STAFF));
+
+router.get('/stats', getStats);
+router.get('/reconciliation-logs', requireRole('SUPER_ADMIN', 'TECH_SUPPORT', 'FINANCE', 'AUDITOR'), getReconciliationLogs);
+
+router.get('/transactions', requireRole('SUPER_ADMIN', 'TECH_SUPPORT', 'CUSTOMER_CARE', 'FINANCE', 'AUDITOR'), getAllTransactions);
+router.get('/transactions/:reference', requireRole('SUPER_ADMIN', 'TECH_SUPPORT', 'CUSTOMER_CARE', 'FINANCE', 'AUDITOR'), getTransactionDetail);
+router.post('/transactions/:reference/retry', requireRole('SUPER_ADMIN', 'TECH_SUPPORT', 'FINANCE'), retryTransaction);
+router.post('/transactions/:reference/mark-failed', requireRole('SUPER_ADMIN', 'TECH_SUPPORT', 'FINANCE'), markTransactionFailed);
+
+router.get('/accounts', requireRole('SUPER_ADMIN', 'FINANCE', 'AUDITOR'), listAccounts);
 
 export default router;
