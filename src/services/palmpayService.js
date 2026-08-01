@@ -87,7 +87,7 @@ export const palmPayCreateDeposit = async (orderData) => {
     const signature = generateSignature(requestBody);
 
     console.log(`\n[${requestId}] === SENDING TO PALMPAY ===`);
-    console.log("URL:", `${BASE_URL}/api/v2/payment/merchant/createorder`);
+    console.log("URL:", `${BASE_URL}api/v2/payment/merchant/createorder`);
     console.log("AppId (Authorization):", MERCHANT_ID);
     console.log("Order ID:", requestBody.orderId);
     console.log("Amount (kobo):", requestBody.amount);
