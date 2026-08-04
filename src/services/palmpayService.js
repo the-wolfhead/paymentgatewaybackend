@@ -37,11 +37,13 @@ export const palmPayCreateDeposit = async (orderData) => {
     const requestTime = Date.now();
     const nonceStr = crypto.randomBytes(16).toString("hex");
 
+    const amountKobo = Math.round(Number(orderData.amount) * 100);
+
     const requestBody = {
       requestTime,
       version: "V1.1",
       nonceStr,
-      amount: Math.round(Number(orderData.amount)),
+      amount: amountKobo,
       currency: "NGN",
       notifyUrl: `${process.env.BASE_URL}api/webhooks/palmpay`,
       orderId: String(orderData.orderNo).slice(0, 32),
