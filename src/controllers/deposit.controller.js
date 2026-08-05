@@ -109,37 +109,31 @@ export const initiateDeposit = async (req, res) => {
       });
     }
 
-    // PalmPay wraps the real payload under `data` and signals success with
-    // respCode "00000000". Treat anything else as a gateway failure so the
-    // app never navigates to a blank/broken WebView.
-    const palmData = gatewayResponse?.data || gatewayResponse;
+    // Extract the checkout URL. Previously this only checked
+    // `data.checkoutUrl`/`checkoutUrl` — an unverified guess at PalmPay's
+    // actual field name. If it's wrong, this silently returns success:true
+    // with checkoutUrl: undefined, and the app has nothing to open. Trying
+    // several plausible field names, and logging the full raw response so
+    // the real field name can be confirmed from the logs if none of these hit.
+    const d = gatewayResponse?.data || gatewayResponse || {};
     const checkoutUrl =
-      palmData?.checkoutUrl ||
-      gatewayResponse?.data?.checkoutUrl ||
-      gatewayResponse?.checkoutUrl;
-    const respCode = gatewayResponse?.respCode;
-    const gatewayOk =
-      (!respCode || respCode === '00000000') && !!checkoutUrl;
+      d.checkoutUrl || d.url || d.link || d.payUrl || d.cashierUrl ||
+      d.redirectUrl || d.h5Url || d.orderUrl;
 
-    if (!gatewayOk) {
+    if (!checkoutUrl) {
+      console.error(
+        `[${requestId}] PalmPay returned success but no recognizable checkout URL field. ` +
+        `Full response:`, JSON.stringify(gatewayResponse, null, 2)
+      );
+
       await prisma.transaction.update({
         where: { id: transaction.id },
-        data: {
-          status: 'FAILED',
-          meta: {
-            ...(transaction.meta || {}),
-            rawResponse: gatewayResponse,
-          },
-          updatedAt: new Date(),
-        },
+        data: { status: "FAILED", meta: { ...(transaction.meta || {}), rawResponse: gatewayResponse } },
       });
 
       return res.status(502).json({
         success: false,
-        message:
-          gatewayResponse?.respMsg ||
-          palmData?.message ||
-          'PalmPay did not return a checkout URL. Please try again.',
+        message: "Payment gateway did not return a checkout link. Check server logs for the raw PalmPay response.",
         requestId,
       });
     }
@@ -150,22 +144,18 @@ export const initiateDeposit = async (req, res) => {
       data: {
         meta: {
           ...(transaction.meta || {}),
-          gatewayOrderId:
-            palmData?.orderNo ||
-            palmData?.orderId ||
-            gatewayResponse?.orderId ||
-            gatewayResponse?.data?.orderId,
+          gatewayOrderId: d.orderId,
           checkoutUrl,
           rawResponse: gatewayResponse,
         },
-      },
+      }
     });
 
     return res.json({
       success: true,
       reference: transaction.reference,
       checkoutUrl,
-      message: 'Deposit initiated successfully',
+      message: "Deposit initiated successfully",
       requestId,
     });
 
