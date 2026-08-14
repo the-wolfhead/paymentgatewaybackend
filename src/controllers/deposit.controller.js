@@ -109,63 +109,24 @@ export const initiateDeposit = async (req, res) => {
       });
     }
 
-    // PalmPay wraps the real payload under `data` and signals success with
-    // respCode "00000000". Treat anything else as a gateway failure so the
-    // app never navigates to a blank/broken WebView.
-    const palmData = gatewayResponse?.data || gatewayResponse;
-    const checkoutUrl =
-      palmData?.checkoutUrl ||
-      gatewayResponse?.data?.checkoutUrl ||
-      gatewayResponse?.checkoutUrl;
-    const respCode = gatewayResponse?.respCode;
-    const gatewayOk =
-      (!respCode || respCode === '00000000') && !!checkoutUrl;
-
-    if (!gatewayOk) {
-      await prisma.transaction.update({
-        where: { id: transaction.id },
-        data: {
-          status: 'FAILED',
-          meta: {
-            ...(transaction.meta || {}),
-            rawResponse: gatewayResponse,
-          },
-          updatedAt: new Date(),
-        },
-      });
-
-      return res.status(502).json({
-        success: false,
-        message:
-          gatewayResponse?.respMsg ||
-          palmData?.message ||
-          'PalmPay did not return a checkout URL. Please try again.',
-        requestId,
-      });
-    }
-
     // Update transaction with gateway response
     await prisma.transaction.update({
       where: { id: transaction.id },
       data: {
         meta: {
           ...(transaction.meta || {}),
-          gatewayOrderId:
-            palmData?.orderNo ||
-            palmData?.orderId ||
-            gatewayResponse?.orderId ||
-            gatewayResponse?.data?.orderId,
-          checkoutUrl,
+          gatewayOrderId: gatewayResponse?.orderId || gatewayResponse?.data?.orderId,
+          checkoutUrl: gatewayResponse?.data?.checkoutUrl || gatewayResponse?.checkoutUrl,
           rawResponse: gatewayResponse,
         },
-      },
+      }
     });
 
     return res.json({
       success: true,
       reference: transaction.reference,
-      checkoutUrl,
-      message: 'Deposit initiated successfully',
+      checkoutUrl: gatewayResponse?.data?.checkoutUrl || gatewayResponse?.checkoutUrl,
+      message: "Deposit initiated successfully",
       requestId,
     });
 
