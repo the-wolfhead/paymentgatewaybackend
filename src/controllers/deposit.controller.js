@@ -109,7 +109,6 @@ export const initiateDeposit = async (req, res) => {
       });
     }
 
-<<<<<<< HEAD
     // Extract the checkout URL. Previously this only checked
     // `data.checkoutUrl`/`checkoutUrl` — an unverified guess at PalmPay's
     // actual field name. If it's wrong, this silently returns success:true
@@ -139,21 +138,14 @@ export const initiateDeposit = async (req, res) => {
       });
     }
 
-=======
->>>>>>> parent of 23fa795 (changes to truncated files)
     // Update transaction with gateway response
     await prisma.transaction.update({
       where: { id: transaction.id },
       data: {
         meta: {
           ...(transaction.meta || {}),
-<<<<<<< HEAD
           gatewayOrderId: d.orderId,
           checkoutUrl,
-=======
-          gatewayOrderId: gatewayResponse?.orderId || gatewayResponse?.data?.orderId,
-          checkoutUrl: gatewayResponse?.data?.checkoutUrl || gatewayResponse?.checkoutUrl,
->>>>>>> parent of 23fa795 (changes to truncated files)
           rawResponse: gatewayResponse,
         },
       }
@@ -162,11 +154,7 @@ export const initiateDeposit = async (req, res) => {
     return res.json({
       success: true,
       reference: transaction.reference,
-<<<<<<< HEAD
       checkoutUrl,
-=======
-      checkoutUrl: gatewayResponse?.data?.checkoutUrl || gatewayResponse?.checkoutUrl,
->>>>>>> parent of 23fa795 (changes to truncated files)
       message: "Deposit initiated successfully",
       requestId,
     });
