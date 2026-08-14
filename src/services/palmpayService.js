@@ -3,8 +3,8 @@ import axios from "axios";
 import crypto from "crypto";
 import { RsaUtil } from "../utils/rsaUtil.js";
 const BASE_URL = process.env.PALMPAY_BASE_URL || "https://open-gw-daily.palmpay-inc.com";
-const MERCHANT_ID = process.env.PALMPAY_AUTH_TOKEN; // this is the AppId PalmPay's docs refer to
-const MERCHANT_PRIVATE_KEY = process.env.PALMPAY_MERCHANT_PRIVATE_KEY;
+const MERCHANT_ID = process.env.PALMPAY_MERCHANT_ID; // this is the AppId PalmPay's docs refer to
+const MERCHANT_PRIVATE_KEY = process.env.PALMPAY_AUTH_TOKEN;
 
 export const palmPayCreateDeposit = async (orderData) => {
   const requestId = `PP_REQ_${Date.now()}`;
