@@ -12,6 +12,7 @@ export const palmPayCreateDeposit = async (orderData) => {
     const requestTime = Date.now();
     const nonceStr = crypto.randomBytes(16).toString("hex");
 
+<<<<<<< HEAD
     // Fixed to match PalmPay's actual documented request body for
     // createorder — previously this sent a `merchantId` field (not part of
     // their spec at all — merchant identity is conveyed via the
@@ -19,11 +20,17 @@ export const palmPayCreateDeposit = async (orderData) => {
     // (`customerInfo`, `remark`) that don't appear anywhere in their docs.
     // It was also missing `userId`, which their spec lists as a required
     // field in both of their own examples.
+=======
+>>>>>>> parent of 23fa795 (changes to truncated files)
     const requestBody = {
       requestTime,
       version: "V1.1",
       nonceStr,
+<<<<<<< HEAD
       amount: Math.round(Number(orderData.amount) * 100), // Naira → kobo
+=======
+      amount: Math.round(Number(orderData.amount)),
+>>>>>>> parent of 23fa795 (changes to truncated files)
       currency: "NGN",
       notifyUrl: `${process.env.BASE_URL}/api/webhooks/palmpay`,
       orderId: orderData.orderNo,
