@@ -23,7 +23,7 @@ export const palmPayCreateDeposit = async (orderData) => {
       requestTime,
       version: "V1.1",
       nonceStr,
-      amount: Number(orderData.amount),
+      amount: Math.round(Number(orderData.amount) * 100), // Naira → kobo
       currency: "NGN",
       notifyUrl: `${process.env.BASE_URL}/api/webhooks/palmpay`,
       orderId: orderData.orderNo,
