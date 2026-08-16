@@ -109,14 +109,43 @@ export const initiateDeposit = async (req, res) => {
       });
     }
 
+    // Extract the checkout URL. Previously this only checked
+    // `data.checkoutUrl`/`checkoutUrl` — an unverified guess at PalmPay's
+    // actual field name. If it's wrong, this silently returns success:true
+    // with checkoutUrl: undefined, and the app has nothing to open. Trying
+    // several plausible field names, and logging the full raw response so
+    // the real field name can be confirmed from the logs if none of these hit.
+    const d = gatewayResponse?.data || gatewayResponse || {};
+    const checkoutUrl =
+      d.checkoutUrl || d.url || d.link || d.payUrl || d.cashierUrl ||
+      d.redirectUrl || d.h5Url || d.orderUrl;
+
+    if (!checkoutUrl) {
+      console.error(
+        `[${requestId}] PalmPay returned success but no recognizable checkout URL field. ` +
+        `Full response:`, JSON.stringify(gatewayResponse, null, 2)
+      );
+
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: { status: "FAILED", meta: { ...(transaction.meta || {}), rawResponse: gatewayResponse } },
+      });
+
+      return res.status(502).json({
+        success: false,
+        message: "Payment gateway did not return a checkout link. Check server logs for the raw PalmPay response.",
+        requestId,
+      });
+    }
+
     // Update transaction with gateway response
     await prisma.transaction.update({
       where: { id: transaction.id },
       data: {
         meta: {
           ...(transaction.meta || {}),
-          gatewayOrderId: gatewayResponse?.orderId || gatewayResponse?.data?.orderId,
-          checkoutUrl: gatewayResponse?.data?.checkoutUrl || gatewayResponse?.checkoutUrl,
+          gatewayOrderId: d.orderId,
+          checkoutUrl,
           rawResponse: gatewayResponse,
         },
       }
@@ -125,7 +154,7 @@ export const initiateDeposit = async (req, res) => {
     return res.json({
       success: true,
       reference: transaction.reference,
-      checkoutUrl: gatewayResponse?.data?.checkoutUrl || gatewayResponse?.checkoutUrl,
+      checkoutUrl,
       message: "Deposit initiated successfully",
       requestId,
     });
