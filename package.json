@@ -12,7 +12,8 @@
     "generate-keys": "node src/scripts/generateKeys.js",
     "seed": "node scripts/seedSystemAccounts.js",
     "lint": "eslint src/**/*.js",
-    "prisma:generate": "npx --yes prisma@7.8.0 generate"
+    "prisma:generate": "npx --yes prisma@7.8.0 generate",
+    "check-palmpay-keys": "node scripts/checkPalmPayKeys.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

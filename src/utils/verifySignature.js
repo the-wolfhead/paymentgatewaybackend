@@ -5,6 +5,31 @@ dotenv.config();
 
 const PALMPAY_PUBLIC_KEY = process.env.PALMPAY_PUBLIC_KEY;
 
+// Every algorithm/encoding/key-format combination below failing UNIFORMLY is
+// a strong signal that the wrong key is configured, not the wrong scheme —
+// most likely PALMPAY_PUBLIC_KEY got set to your own merchant public key
+// (the counterpart to PALMPAY_MERCHANT_PRIVATE_KEY, which PalmPay uses to
+// verify requests YOU send) instead of PalmPay's own platform public key
+// (which YOU need to verify the signatures THEY send on webhooks). Both are
+// just base64 RSA keys sitting on the same dashboard page — easy to swap.
+//
+// This logs a short, non-secret fingerprint of whatever key is actually
+// configured, once, so you can confirm it matches what PalmPay's dashboard
+// shows for "platform/notification public key" without pasting the real
+// key anywhere. Compute the same fingerprint yourself from the dashboard
+// value with:
+//   echo -n "<the key from PalmPay's dashboard>" | openssl dgst -sha256
+if (PALMPAY_PUBLIC_KEY) {
+  const fingerprint = crypto
+    .createHash('sha256')
+    .update(PALMPAY_PUBLIC_KEY.trim())
+    .digest('hex')
+    .slice(0, 16);
+  console.log(`[PalmPay] Configured PALMPAY_PUBLIC_KEY fingerprint: ${fingerprint}`);
+} else {
+  console.error('[PalmPay] PALMPAY_PUBLIC_KEY is not set at all');
+}
+
 /**
  * PalmPay payment-result notification signature verification.
  *
