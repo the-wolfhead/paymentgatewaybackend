@@ -1,7 +1,7 @@
 // src/controllers/webhook.controller.js
 import { verifyPalmPaySignature } from '../utils/verifySignature.js';
 import { prisma } from '../config/prisma.js';
-import { creditWalletLedger } from '../services/walletService.js';
+import { creditWalletLedger, creditDoctorForAppointment } from '../services/walletService.js';
 import { notifyBackendZHS } from '../services/notificationService.js';
 
 export const palmpayWebhook = async (req, res) => {
@@ -64,6 +64,28 @@ export const palmpayWebhook = async (req, res) => {
         } catch (ledgerError) {
           console.error(`[${requestId}] Ledger credit failed:`, ledgerError);
         }
+      }
+
+      // Pay the doctor their share of an appointment fee (minus platform
+      // commission). Requires the doctor's linked login (userId) to have
+      // been included in the metadata the app sent at deposit-initiate time
+      // — see GET /doctors on the ZHS backend, which now includes it.
+      const doctorUserId = transaction.meta?.doctor?.userId;
+      if (transaction.meta?.purpose !== 'WALLET_TOPUP' && doctorUserId) {
+        try {
+          await creditDoctorForAppointment({
+            doctorUserId,
+            amount: parseFloat(amount),
+            transactionId: transaction.id,
+            description: `Appointment fee #${transaction.reference}`,
+          });
+        } catch (doctorCreditError) {
+          console.error(`[${requestId}] Doctor credit failed:`, doctorCreditError);
+        }
+      } else if (transaction.meta?.purpose !== 'WALLET_TOPUP') {
+        console.warn(
+          `[${requestId}] Appointment payment succeeded but doctor has no linked userId in meta — doctor was not paid. reference=${transaction.reference}`
+        );
       }
 
       // === Notify backendzhs to create appointment ===

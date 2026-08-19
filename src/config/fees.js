@@ -4,4 +4,5 @@ export const FEES = {
   TRANSFER_PERCENT: 0.02,   // 2%
   WITHDRAWAL_FLAT: 50,      // ₦50
   ESCROW_PERCENT: 0.25,    // 25%
+  DOCTOR_COMMISSION_PERCENT: 0.15, // Platform keeps 15% of each appointment fee
 };

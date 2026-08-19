@@ -15,8 +15,10 @@
 // balance has a single source of truth across the app.
 import { prisma } from '../config/prisma.js';
 import { createLedgerEntriesForTransaction } from './doubleLedger.service.js';
+import { FEES } from '../config/fees.js';
 
 const SYSTEM_DEPOSITS_ACCOUNT_NUMBER = 'SYSTEM_DEPOSITS';
+const SYSTEM_REVENUE_ACCOUNT_NUMBER = 'SYSTEM_REVENUE'; // same system account transfer.service.js pays fees into
 
 async function getOrCreateUserAccount(userId) {
   let account = await prisma.account.findFirst({ where: { userId } });
@@ -112,7 +114,47 @@ export const debitWalletLedger = async ({
   return { userAccountId: userAccount.id };
 };
 
+/**
+ * Pays a doctor their share of a confirmed appointment fee (minus the
+ * platform's commission), against an already-existing Transaction row.
+ * Without this, an appointment payment credited nobody — the money had
+ * nowhere to land for a doctor to ever withdraw.
+ */
+export const creditDoctorForAppointment = async ({
+  doctorUserId,
+  amount,
+  transactionId,
+  description = 'Appointment payment',
+}) => {
+  if (!doctorUserId || !amount || Number(amount) <= 0) {
+    throw new Error('Invalid doctor credit parameters');
+  }
+  if (!transactionId) {
+    throw new Error('transactionId is required to credit a doctor');
+  }
+
+  const commission = Math.round(Number(amount) * FEES.DOCTOR_COMMISSION_PERCENT * 100) / 100;
+  const doctorNet = Number(amount) - commission;
+
+  const doctorAccount = await getOrCreateUserAccount(doctorUserId);
+  const depositsAccount = await getOrCreateSystemAccount(SYSTEM_DEPOSITS_ACCOUNT_NUMBER);
+  const revenueAccount = await getOrCreateSystemAccount(SYSTEM_REVENUE_ACCOUNT_NUMBER, 'FEES');
+
+  await createLedgerEntriesForTransaction({
+    transactionId,
+    narration: description,
+    entries: [
+      { accountId: depositsAccount.id, type: 'DEBIT', amount: Number(amount) },
+      { accountId: doctorAccount.id, type: 'CREDIT', amount: doctorNet },
+      { accountId: revenueAccount.id, type: 'CREDIT', amount: commission },
+    ],
+  });
+
+  return { doctorAccountId: doctorAccount.id, doctorNet, commission };
+};
+
 export default {
   creditWalletLedger,
   debitWalletLedger,
+  creditDoctorForAppointment,
 };

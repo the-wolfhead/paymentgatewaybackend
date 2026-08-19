@@ -8,6 +8,7 @@
     "start": "node src/app.js",
     "dev": "node src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "prisma generate",
     "generate-keys": "node src/scripts/generateKeys.js",
     "seed": "node scripts/seedSystemAccounts.js",
     "lint": "eslint src/**/*.js"

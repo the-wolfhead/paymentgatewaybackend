@@ -1,14 +1,11 @@
-
 // src/services/palmpayService.js
 import axios from "axios";
 import crypto from "crypto";
 import { RsaUtil } from "../utils/rsaUtil.js";
-
 const BASE_URL =
   process.env.PALMPAY_BASE_URL || "https://open-gw-sandbox.palmpay-inc.com";
 const MERCHANT_ID = process.env.PALMPAY_AUTH_TOKEN;
 const MERCHANT_PRIVATE_KEY = process.env.PALMPAY_MERCHANT_PRIVATE_KEY;
-
 function buildSignString(params) {
   return Object.keys(params)
     .filter((key) => {
@@ -19,7 +16,6 @@ function buildSignString(params) {
     .map((key) => `${key}=${String(params[key]).trim()}`)
     .join("&");
 }
-
 function generateSignature(body) {
   const strA = buildSignString(body);
   const md5Str = crypto
@@ -27,17 +23,13 @@ function generateSignature(body) {
     .update(strA, "utf8")
     .digest("hex")
     .toUpperCase();
-
   return RsaUtil.sign(MERCHANT_PRIVATE_KEY, md5Str);
 }
-
 export const palmPayCreateDeposit = async (orderData) => {
   const requestId = `PP_REQ_${Date.now()}`;
-
   try {
     const requestTime = Date.now();
     const nonceStr = crypto.randomBytes(16).toString("hex");
-
     const requestBody = {
       requestTime,
       version: "V1.1",
@@ -53,7 +45,6 @@ export const palmPayCreateDeposit = async (orderData) => {
         "https://paymentgatewaybackend-580i.onrender.com/api/payment/success",
       goodsDetails: orderData.goodsDetails || '[{"goodsId":"1"}]',
     };
-
     Object.keys(requestBody).forEach((k) => {
       if (
         requestBody[k] === undefined ||
@@ -63,9 +54,7 @@ export const palmPayCreateDeposit = async (orderData) => {
         delete requestBody[k];
       }
     });
-
     const signature = generateSignature(requestBody);
-
     const headers = {
       Accept: "application/json, text/plain, */*",
       CountryCode: "NG",
@@ -73,7 +62,6 @@ export const palmPayCreateDeposit = async (orderData) => {
       Signature: signature,
       "Content-Type": "application/json",
     };
-
     const requestConfig = {
       method: "POST",
       url: `${BASE_URL}api/v2/payment/merchant/createorder`,
@@ -81,11 +69,8 @@ export const palmPayCreateDeposit = async (orderData) => {
       data: requestBody,
       timeout: 15000,
     };
-
     console.log(`[${requestId}] Entire request being sent:`, JSON.stringify(requestConfig, null, 2));
-
     const response = await axios(requestConfig);
-
     console.log(
       `[${requestId}] PalmPay Response:`,
       JSON.stringify(response.data, null, 2)
