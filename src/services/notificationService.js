@@ -1,7 +1,7 @@
 // src/services/notificationService.js
 import axios from 'axios';
 
-const BACKEND_ZHS_URL = "https://zhs-backend-1.onrender.com";
+const BACKEND_ZHS_URL = (process.env.BACKEND_ZHS_URL || "https://zhs-backend-1.onrender.com").replace(/\/$/, "");
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 
 if (!INTERNAL_API_KEY) {
@@ -15,6 +15,9 @@ export const notifyBackendZHS = async (data) => {
   const requestId = `NOTIF_${Date.now()}`;
 
   try {
+    // This is the exact appointment form sent to the ZHS appointment API.
+    // Keep paymentReference in the body so the receiving API can make the
+    // operation idempotent.
     const payload = {
       userId: data.userId,
       doctorId: data.doctorId,
@@ -40,7 +43,11 @@ export const notifyBackendZHS = async (data) => {
     );
 
     console.log(`[${requestId}] ✅ Successfully notified backendzhs`);
-    return response.data;
+    return {
+      success: response.data?.success !== false,
+      data: response.data,
+      status: response.status,
+    };
 
   } catch (error) {
     console.error(`[${requestId}] ❌ Notification to backendzhs failed:`);
@@ -52,6 +59,11 @@ export const notifyBackendZHS = async (data) => {
       console.error(error.message);
     }
 
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error.response?.data?.message || error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    };
   }
 };

@@ -2,7 +2,7 @@
 import { verifyPalmPaySignature } from '../utils/verifySignature.js';
 import { prisma } from '../config/prisma.js';
 import { creditWalletLedger, creditDoctorForAppointment } from '../services/walletService.js';
-import { notifyBackendZHS } from '../services/notificationService.js';
+import { createAppointmentForSuccessfulPayment } from '../services/appointment.service.js';
 
 export const palmpayWebhook = async (req, res) => {
   const requestId = `WH_${Date.now()}`;
@@ -88,24 +88,22 @@ export const palmpayWebhook = async (req, res) => {
         );
       }
 
-      // === Notify backendzhs to create appointment ===
-      if (transaction.meta?.doctor || transaction.meta?.doctorId) {
-        try {
-          await notifyBackendZHS({
-            userId: transaction.userId,
-            doctorId: transaction.meta.doctor?.id || transaction.meta.doctorId,
-            patientName: transaction.meta.patientName,
-            date: transaction.meta.date,
-            time: transaction.meta.time,
-            fee: transaction.amount,
-            paymentReference: transaction.reference,
-            paymentGateway: 'PALMPAY',
-            metadata: transaction.meta
-          });
-        } catch (notifyError) {
-          console.error(`[${requestId}] Failed to notify backendzhs:`, notifyError);
-        }
+      // === Create appointment in ZHS after confirmed payment ===
+      // The PalmPay webhook is the source of truth for payment success.
+      // The shared service is also used by the return URL as a retry path.
+      try {
+        await createAppointmentForSuccessfulPayment(transaction);
+        console.log(`[${requestId}] ✅ Appointment creation request completed`);
+      } catch (appointmentError) {
+        // Keep the transaction SUCCESS even if the appointment API is
+        // temporarily unavailable. The return URL/status polling can retry
+        // the appointment creation without charging the patient again.
+        console.error(
+          `[${requestId}] ❌ Appointment creation failed:`,
+          appointmentError.message || appointmentError
+        );
       }
+
     }
 
     // 4. Update transaction status

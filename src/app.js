@@ -30,6 +30,8 @@ import adminRoutes from './routes/admin.routes.js';
 import { limiter } from './middleware/ratelimit.js';
 import { errorHandler } from './middleware/error.middleware.js';
 import { logger } from './config/logger.js';
+import { prisma } from './config/prisma.js';
+import { createAppointmentForSuccessfulPayment } from './services/appointment.service.js';
 
 const app = express();
 
@@ -60,30 +62,84 @@ app.use('/api/admin', adminRoutes);
 // Webhook Routes
 app.use('/api/webhooks', webhookRoutes);
 
-// Success Page Route (for PalmPay returnUrl)
-app.get('/api/payment/success', (req, res) => {
+// PalmPay return URL.
+// IMPORTANT: arriving here is not, by itself, proof of payment. The PalmPay
+// webhook changes the transaction to SUCCESS. Once it is SUCCESS, this route
+// retries the appointment API call if the webhook could not create it.
+app.get('/api/payment/success', async (req, res) => {
   const { ref } = req.query;
 
-  console.log(`Payment success page accessed with reference: ${ref}`);
+  if (!ref) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing payment reference',
+    });
+  }
 
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Payment Successful</title>
-        <style>
-          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-          h1 { color: #22C55E; }
-        </style>
-      </head>
-      <body>
-        <h1>✅ Payment Successful!</h1>
-        <p>Reference: <strong>${ref || 'N/A'}</strong></p>
-        <p>Your appointment has been confirmed.</p>
-        <p>You can close this window.</p>
-      </body>
-    </html>
-  `);
+  try {
+    const transaction = await prisma.transaction.findUnique({
+      where: { reference: String(ref) },
+      include: { User: true },
+    });
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment transaction not found',
+        reference: ref,
+      });
+    }
+
+    let appointmentResult = null;
+
+    if (transaction.status === 'SUCCESS') {
+      try {
+        appointmentResult = await createAppointmentForSuccessfulPayment(transaction);
+      } catch (appointmentError) {
+        console.error(
+          `Appointment retry failed for ${ref}:`,
+          appointmentError.message || appointmentError
+        );
+      }
+    }
+
+    const appointmentCreated =
+      appointmentResult?.alreadyCreated ||
+      appointmentResult?.appointment ||
+      transaction.meta?.appointmentCreated === true;
+
+    const safeMessage =
+      transaction.status === 'SUCCESS' && appointmentCreated
+        ? 'Payment successful. Your appointment has been created.'
+        : transaction.status === 'SUCCESS'
+          ? 'Payment successful. We are confirming your appointment.'
+          : transaction.status === 'PENDING'
+            ? 'Payment received. We are waiting for payment confirmation.'
+            : 'Payment was not successful.';
+
+    // Return a small page for PalmPay's browser/WebView, but do the actual
+    // appointment POST above. The app should use /api/deposit/status/:reference
+    // as the authoritative status endpoint.
+    res.status(200).send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Payment status</title>
+</head>
+<body style="font-family:Arial,sans-serif;text-align:center;padding:40px">
+  <h2>${safeMessage}</h2>
+  <p>Reference: <strong>${String(ref).replace(/[<>&"']/g, '')}</strong></p>
+  <p>You can return to the app.</p>
+</body>
+</html>`);
+  } catch (error) {
+    console.error('Payment success route error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to process payment result',
+      reference: ref,
+    });
+  }
 });
 
 // Health Check

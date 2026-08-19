@@ -36,7 +36,35 @@ export const initiateDeposit = async (req, res) => {
   const requestId = `REQ_${Date.now()}`;
 
   try {
-    const { amount, gateway = 'PALMPAY', description, userId, purpose = 'APPOINTMENT', metadata = {} } = req.body;
+    const {
+      amount,
+      gateway = 'PALMPAY',
+      description,
+      userId,
+      purpose = 'APPOINTMENT',
+      metadata = {},
+      doctorId,
+      doctor,
+      patientName,
+      date,
+      time,
+      appointmentDate,
+      appointmentTime,
+    } = req.body;
+
+    // Accept appointment fields either directly in the request body or inside
+    // metadata. This prevents the payment flow from losing the appointment
+    // form while the user is being sent through PalmPay.
+    const appointmentMetadata = {
+      ...metadata,
+      ...(doctorId !== undefined ? { doctorId } : {}),
+      ...(doctor !== undefined ? { doctor } : {}),
+      ...(patientName !== undefined ? { patientName } : {}),
+      ...(date !== undefined ? { date } : {}),
+      ...(time !== undefined ? { time } : {}),
+      ...(appointmentDate !== undefined ? { appointmentDate } : {}),
+      ...(appointmentTime !== undefined ? { appointmentTime } : {}),
+    };
 
     if (!userId || !amount || Number(amount) <= 0) {
       return res.status(400).json({
@@ -63,7 +91,7 @@ export const initiateDeposit = async (req, res) => {
         status: "PENDING",
         reference,
          meta: {                    // ← This is the correct field name in your schema
-          ...metadata,
+          ...appointmentMetadata,
           purpose, // 'APPOINTMENT' | 'WALLET_TOPUP'
           description: description || `Appointment with doctor`, // Store description inside meta
           initiatedAt: now.toISOString(),
@@ -84,7 +112,7 @@ export const initiateDeposit = async (req, res) => {
           userId,
 
           // Clean return URL
-          returnUrl: "https://paymentgatewaybackend-580i.onrender.com/api/payment/success?ref=" + reference,
+          returnUrl: `${(process.env.BASE_URL || "https://paymentgatewaybackend-580i.onrender.com").replace(/\/$/, "")}/api/payment/success?ref=${encodeURIComponent(reference)}`,
         });
       } catch (gatewayError) {
         console.error(`[${requestId}] PalmPay Error:`, gatewayError.message || gatewayError);
