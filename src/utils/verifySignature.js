@@ -208,6 +208,10 @@ export const verifyPalmPaySignature = (payload) => {
     console.warn('PalmPay webhook sign string (all fields):', allFieldsSignString);
     console.warn('PalmPay webhook sign string (documented fields only):', documentedFieldsSignString);
     console.warn('PalmPay webhook decoded signature length:', signature.length);
+    console.warn(
+      'PalmPay webhook: If EVERY algorithm/key variant failed, PALMPAY_PUBLIC_KEY is almost certainly wrong. ' +
+      'Run: node scripts/checkPalmPayKeys.js — and re-copy the PLATFORM/notification public key from PalmPay dashboard (not your merchant key).'
+    );
     return false;
   } catch (error) {
     console.error('PalmPay webhook signature verification error:', error);

@@ -9,7 +9,10 @@ import { createAppointmentForSuccessfulPayment } from '../services/appointment.s
  *
  * PalmPay sends the merchant order identifier as `orderId`, the PalmPay
  * platform order number as `orderNo`, and the result as numeric `orderStatus`.
- * For a successful payment orderStatus === 1.
+ *
+ * Order status (PalmPay data dictionary):
+ *   0 = unpaid, 1 = paying, 2 = success, 3 = fail, 4 = close, 5 = required_capture
+ * Only 2 is a successful final status for checkout / pay-in notifications.
  *
  * IMPORTANT: PalmPay requires the plain-text response `success` with HTTP 200.
  */
@@ -64,11 +67,15 @@ export const palmpayWebhook = async (req, res) => {
       return res.status(404).send('Transaction not found');
     }
 
-    const successful = Number(orderStatus) === 1;
-    const newStatus = successful ? 'SUCCESS' : 'FAILED';
+    // PalmPay data dictionary: 2 = success (final). 1 = paying (in progress).
+    // Also accept legacy/virtual-account payloads that use top-level `status === 1`.
+    const statusNum = Number(orderStatus);
+    const altStatus = payload.status != null ? Number(payload.status) : null;
+    const successful = statusNum === 2 || (statusNum !== 3 && statusNum !== 4 && altStatus === 1);
+    const newStatus = successful ? 'SUCCESS' : (statusNum === 0 || statusNum === 1 ? 'PENDING' : 'FAILED');
 
     console.log(
-      `[${requestId}] Transaction ${transaction.reference}: orderStatus=${orderStatus} -> ${newStatus}`
+      `[${requestId}] Transaction ${transaction.reference}: orderStatus=${orderStatus} (alt status=${payload.status}) -> ${newStatus}`
     );
 
     // PalmPay may retry the same notification. Always acknowledge a valid
