@@ -4,60 +4,112 @@ import { prisma } from '../config/prisma.js';
 import { creditWalletLedger, creditDoctorForAppointment } from '../services/walletService.js';
 import { createAppointmentForSuccessfulPayment } from '../services/appointment.service.js';
 
+/**
+ * PalmPay payment-result notification.
+ *
+ * PalmPay sends the merchant order identifier as `orderId`, the PalmPay
+ * platform order number as `orderNo`, and the result as numeric `orderStatus`.
+ * For a successful payment orderStatus === 1.
+ *
+ * IMPORTANT: PalmPay requires the plain-text response `success` with HTTP 200.
+ */
 export const palmpayWebhook = async (req, res) => {
   const requestId = `WH_${Date.now()}`;
 
   try {
-    console.log(`[${requestId}] PalmPay webhook received`);
+    const payload = req.body || {};
+    const {
+      orderId,
+      orderNo,
+      amount,
+      currency,
+      orderStatus,
+      completeTime,
+      payMethod,
+    } = payload;
 
-    // 1. Verify Signature
-    if (!verifyPalmPaySignature(req)) {
-      console.warn(`[${requestId}] Invalid signature`);
+    console.log(`[${requestId}] PalmPay webhook received`, {
+      orderId,
+      orderNo,
+      amount,
+      currency,
+      orderStatus,
+      completeTime,
+      payMethod,
+    });
+
+    // PalmPay puts `sign` in the request body, not in a Signature header.
+    if (!verifyPalmPaySignature(payload)) {
+      console.warn(`[${requestId}] Invalid PalmPay signature`);
       return res.status(401).send('Invalid signature');
     }
 
-    const payload = req.body;
-    const { orderNo, amount, status } = payload;
-
-    if (!orderNo) {
-      console.warn(`[${requestId}] Missing orderNo in payload`);
+    // `orderId` is the merchant's unique order number. That is the value we
+    // created from our transaction reference, so it is the correct lookup key.
+    if (!orderId) {
+      console.warn(`[${requestId}] Missing orderId in PalmPay payload`);
       return res.status(400).send('Invalid payload');
     }
 
-    console.log(`[${requestId}] Processing order: ${orderNo}, Status: ${status}`);
-
-    // 2. Find transaction
     const transaction = await prisma.transaction.findUnique({
-      where: { reference: orderNo },
-      include: { User: true }
+      where: { reference: String(orderId) },
+      include: { User: true },
     });
 
     if (!transaction) {
-      console.warn(`[${requestId}] Transaction not found for: ${orderNo}`);
-      return res.status(200).send('OK');
+      // A valid notification for an order we do not know should be retried by
+      // PalmPay rather than silently acknowledged. This helps recover from an
+      // eventual-consistency/deployment race.
+      console.warn(`[${requestId}] Transaction not found for merchant orderId: ${orderId}`);
+      return res.status(404).send('Transaction not found');
     }
 
-    // 3. Prevent duplicate processing
+    const successful = Number(orderStatus) === 1;
+    const newStatus = successful ? 'SUCCESS' : 'FAILED';
+
+    console.log(
+      `[${requestId}] Transaction ${transaction.reference}: orderStatus=${orderStatus} -> ${newStatus}`
+    );
+
+    // PalmPay may retry the same notification. Always acknowledge a valid
+    // notification, but never repeat the business effects after success.
     if (transaction.status === 'SUCCESS') {
-      console.log(`[${requestId}] Already processed`);
-      return res.status(200).send('OK');
+      console.log(`[${requestId}] Transaction already SUCCESS; acknowledging duplicate notification`);
+      return res.status(200).send('success');
     }
 
-    let newStatus = 'FAILED';
+    // Persist the payment result FIRST. This is important because appointment
+    // creation also updates transaction.meta; updating the old transaction
+    // object afterwards could otherwise overwrite appointmentCreated=true.
+    await prisma.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        status: newStatus,
+        meta: {
+          ...(transaction.meta || {}),
+          webhookPayload: payload,
+          palmpayOrderId: orderId,
+          palmpayPlatformOrderNo: orderNo,
+          palmpayOrderStatus: Number(orderStatus),
+          paymentCompletedAt: completeTime ? new Date(Number(completeTime)).toISOString() : null,
+          paymentMethod: payMethod || null,
+        },
+      },
+    });
 
-    const upperStatus = status?.toString().toUpperCase();
+    if (successful) {
+      // Use our transaction amount (Naira), not PalmPay's notification amount
+      // (minor units/kobo), for internal wallet/doctor accounting.
+      const transactionAmount = Number(transaction.amount);
+      const meta = transaction.meta && typeof transaction.meta === 'object'
+        ? transaction.meta
+        : {};
 
-    if (upperStatus === 'SUCCESS' || upperStatus === 'COMPLETED') {
-      newStatus = 'SUCCESS';
-
-      // Only credit the wallet for genuine top-ups. An appointment payment
-      // isn't a top-up — the money was spent on the appointment, so crediting
-      // it into "wallet balance" too would double-count it.
-      if (transaction.meta?.purpose === 'WALLET_TOPUP') {
+      if (meta.purpose === 'WALLET_TOPUP') {
         try {
           await creditWalletLedger({
             userId: transaction.userId,
-            amount: parseFloat(amount),
+            amount: transactionAmount,
             transactionId: transaction.id,
             description: `PalmPay Deposit #${transaction.reference}`,
           });
@@ -66,63 +118,54 @@ export const palmpayWebhook = async (req, res) => {
         }
       }
 
-      // Pay the doctor their share of an appointment fee (minus platform
-      // commission). Requires the doctor's linked login (userId) to have
-      // been included in the metadata the app sent at deposit-initiate time
-      // — see GET /doctors on the ZHS backend, which now includes it.
-      const doctorUserId = transaction.meta?.doctor?.userId;
-      if (transaction.meta?.purpose !== 'WALLET_TOPUP' && doctorUserId) {
+      const doctorUserId = meta.doctor?.userId;
+      if (meta.purpose !== 'WALLET_TOPUP' && doctorUserId) {
         try {
           await creditDoctorForAppointment({
             doctorUserId,
-            amount: parseFloat(amount),
+            amount: transactionAmount,
             transactionId: transaction.id,
             description: `Appointment fee #${transaction.reference}`,
           });
         } catch (doctorCreditError) {
           console.error(`[${requestId}] Doctor credit failed:`, doctorCreditError);
         }
-      } else if (transaction.meta?.purpose !== 'WALLET_TOPUP') {
+      } else if (meta.purpose !== 'WALLET_TOPUP') {
         console.warn(
           `[${requestId}] Appointment payment succeeded but doctor has no linked userId in meta — doctor was not paid. reference=${transaction.reference}`
         );
       }
 
-      // === Create appointment in ZHS after confirmed payment ===
-      // The PalmPay webhook is the source of truth for payment success.
-      // The shared service is also used by the return URL as a retry path.
       try {
-        await createAppointmentForSuccessfulPayment(transaction);
-        console.log(`[${requestId}] ✅ Appointment creation request completed`);
+        // Re-fetch so appointmentCreated/other metadata written by another
+        // request is visible before attempting appointment creation.
+        const latestTransaction = await prisma.transaction.findUnique({
+          where: { id: transaction.id },
+          include: { User: true },
+        });
+
+        await createAppointmentForSuccessfulPayment(latestTransaction || transaction);
+        console.log(`[${requestId}] Appointment creation request completed`);
       } catch (appointmentError) {
-        // Keep the transaction SUCCESS even if the appointment API is
-        // temporarily unavailable. The return URL/status polling can retry
-        // the appointment creation without charging the patient again.
+        // Keep payment SUCCESS. A later return/status retry can create the
+        // appointment without charging the patient again.
         console.error(
-          `[${requestId}] ❌ Appointment creation failed:`,
+          `[${requestId}] Appointment creation failed:`,
           appointmentError.message || appointmentError
         );
       }
-
     }
 
-    // 4. Update transaction status
-    await prisma.transaction.update({
-      where: { id: transaction.id },
-      data: {
-        status: newStatus,
-        meta: {
-          ...(transaction.meta || {}),
-          webhookPayload: payload,
-        },
-      }
-    });
+    console.log(`[${requestId}] PalmPay webhook processed -> ${newStatus}`);
 
-    console.log(`[${requestId}] Webhook processed → ${newStatus}`);
-    return res.status(200).send('OK');
-
+    // PalmPay explicitly requires this exact plain-text acknowledgement.
+    return res.status(200).send('success');
   } catch (error) {
-    console.error(`[${requestId}] Webhook Error:`, error);
-    return res.status(200).send('OK'); // Always acknowledge
+    console.error(`[${requestId}] PalmPay webhook error:`, error);
+
+    // Do NOT acknowledge unexpected processing errors as success. PalmPay will
+    // retry according to its documented retry schedule, which gives us a
+    // chance to process the notification successfully later.
+    return res.status(500).send('Webhook processing failed');
   }
 };
