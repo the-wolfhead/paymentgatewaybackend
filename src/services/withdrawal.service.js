@@ -1,15 +1,17 @@
-// src/services/withdrawal.service.js
-//
-// Fixed: this called createMultiEntry({ debitAccountId, creditAccountId, ... })
-// but createMultiEntry only ever accepted an `entries` array — `entries`
-// would have been undefined and crashed immediately on `entries.filter`.
-// Also added null-checks for missing accounts and passed userId through.
+/**
+ * User wallet withdrawal → PalmPay merchant payout.
+ * 1) Ensure ledger balance
+ * 2) Debit user / credit SYSTEM_PAYOUT (PENDING transaction preferred)
+ * 3) Call PalmPay payout
+ * 4) On hard failure, reverse ledger
+ */
 import { prisma } from '../config/prisma.js';
 import { createMultiEntry } from './doubleLedger.service.js';
 import { getAccountBalance } from './balance.service.js';
-import { sendPayout } from './payout.service.js';
+import { sendPayout, queryPayout } from './payout.service.js';
 
 const SYSTEM_PAYOUT_ACCOUNT_NUMBER = 'SYSTEM_PAYOUT';
+const MIN_WITHDRAWAL = Number(process.env.MIN_WITHDRAWAL_NGN) || 100;
 
 export const withdrawFunds = async ({
   userId,
@@ -17,7 +19,16 @@ export const withdrawFunds = async ({
   bankCode,
   accountNumber,
   accountName,
+  phone,
 }) => {
+  const naira = Number(amount);
+  if (!Number.isFinite(naira) || naira < MIN_WITHDRAWAL) {
+    throw new Error(`Minimum withdrawal is ₦${MIN_WITHDRAWAL}`);
+  }
+  if (!bankCode || !accountNumber) {
+    throw new Error('bankCode and accountNumber are required');
+  }
+
   const userAccount = await prisma.account.findFirst({ where: { userId } });
   if (!userAccount) throw new Error('User account not found');
 
@@ -26,56 +37,143 @@ export const withdrawFunds = async ({
   });
   if (!systemAccount) {
     throw new Error(
-      `System account "${SYSTEM_PAYOUT_ACCOUNT_NUMBER}" is not set up — run the seed script (npm run seed)`
+      `System account "${SYSTEM_PAYOUT_ACCOUNT_NUMBER}" is not set up — run the seed script`
     );
   }
 
-  const balance = await getAccountBalance(userAccount.id);
-
-  if (balance < amount) {
-    throw new Error('Insufficient balance');
+  const balance = Number(await getAccountBalance(userAccount.id));
+  if (balance < naira) {
+    throw new Error(`Insufficient balance (available ₦${balance.toFixed(2)})`);
   }
 
-  const reference = `WDR_${Date.now()}`;
+  // PalmPay orderId max 32 chars
+  const reference = `W${Date.now()}${Math.random().toString(36).slice(2, 8)}`.slice(0, 32);
 
-  // STEP 1: Ledger debit (user -> system, pending payout)
   await createMultiEntry({
     reference,
     userId,
     type: 'PAYMENT',
     channel: 'BANK_TRANSFER',
-    narration: 'Withdrawal',
+    narration: `Withdrawal to ${accountNumber}`,
     entries: [
-      { accountId: userAccount.id, type: 'DEBIT', amount },
-      { accountId: systemAccount.id, type: 'CREDIT', amount },
+      { accountId: userAccount.id, type: 'DEBIT', amount: naira },
+      { accountId: systemAccount.id, type: 'CREDIT', amount: naira },
     ],
   });
 
+  // Mark meta for payout tracking
   try {
-    // STEP 2: Call PalmPay
+    await prisma.transaction.update({
+      where: { reference },
+      data: {
+        status: 'PENDING',
+        meta: {
+          narration: `Withdrawal to ${accountNumber}`,
+          bankCode,
+          accountNumber,
+          accountName: accountName || null,
+          kind: 'WITHDRAWAL',
+        },
+      },
+    });
+  } catch (_) {
+    /* schema may not allow status update the same way */
+  }
+
+  try {
     const payout = await sendPayout({
-      amount,
-      accountNumber,
-      bankCode,
-      name: accountName,
+      amount: naira,
+      accountNumber: String(accountNumber).replace(/\s+/g, ''),
+      bankCode: String(bankCode),
+      name: accountName || 'Beneficiary',
       reference,
+      phone,
+      remark: 'Wallet withdrawal',
     });
 
-    return payout;
+    const finalStatus = payout.status === 'SUCCESS' ? 'SUCCESS' : 'PENDING';
+    try {
+      await prisma.transaction.update({
+        where: { reference },
+        data: {
+          status: finalStatus,
+          paystackResponse: payout.raw || payout,
+          meta: {
+            kind: 'WITHDRAWAL',
+            bankCode,
+            accountNumber,
+            accountName: accountName || null,
+            orderNo: payout.orderNo,
+            orderStatus: payout.orderStatus,
+            sessionId: payout.sessionId,
+          },
+        },
+      });
+    } catch (_) {}
+
+    return {
+      reference,
+      amount: naira,
+      currency: 'NGN',
+      status: finalStatus,
+      payout,
+    };
   } catch (err) {
-    // STEP 3: Reverse if failed
+    // Reverse ledger on immediate PalmPay failure
     await createMultiEntry({
-      reference: `${reference}_REV`,
+      reference: `${reference}R`.slice(0, 32),
       userId,
       type: 'REFUND',
       channel: 'BANK_TRANSFER',
       narration: 'Withdrawal reversal',
       entries: [
-        { accountId: systemAccount.id, type: 'DEBIT', amount },
-        { accountId: userAccount.id, type: 'CREDIT', amount },
+        { accountId: systemAccount.id, type: 'DEBIT', amount: naira },
+        { accountId: userAccount.id, type: 'CREDIT', amount: naira },
       ],
     });
 
-    throw new Error('Payout failed, transaction reversed');
+    try {
+      await prisma.transaction.update({
+        where: { reference },
+        data: {
+          status: 'FAILED',
+          meta: {
+            kind: 'WITHDRAWAL',
+            error: err.message,
+            palmpay: err.palmpay || null,
+          },
+        },
+      });
+    } catch (_) {}
+
+    throw new Error(err.message || 'Payout failed, transaction reversed');
   }
+};
+
+export const getWithdrawalStatus = async (reference, userId) => {
+  const tx = await prisma.transaction.findFirst({
+    where: {
+      reference,
+      ...(userId ? { userId } : {}),
+    },
+  });
+  if (!tx) throw new Error('Withdrawal not found');
+
+  let provider = null;
+  if (tx.status === 'PENDING') {
+    try {
+      provider = await queryPayout(reference);
+    } catch (e) {
+      provider = { error: e.message };
+    }
+  }
+
+  return {
+    reference: tx.reference,
+    amount: tx.amount,
+    status: tx.status,
+    meta: tx.meta,
+    provider,
+    createdAt: tx.createdAt,
+  };
 };

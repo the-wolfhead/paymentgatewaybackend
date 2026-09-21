@@ -10,6 +10,7 @@ import {
   markTransactionFailed,
   listAccounts,
 } from '../controllers/admin.controller.js';
+import { getMerchantPalmPayBalance } from '../controllers/wallet.controller.js';
 
 const router = express.Router();
 
@@ -26,5 +27,11 @@ router.post('/transactions/:reference/retry', requireRole('SUPER_ADMIN', 'TECH_S
 router.post('/transactions/:reference/mark-failed', requireRole('SUPER_ADMIN', 'TECH_SUPPORT', 'FINANCE'), markTransactionFailed);
 
 router.get('/accounts', requireRole('SUPER_ADMIN', 'FINANCE', 'AUDITOR'), listAccounts);
+
+router.get(
+  '/merchant-balance',
+  requireRole('SUPER_ADMIN', 'FINANCE', 'AUDITOR', 'TECH_SUPPORT'),
+  getMerchantPalmPayBalance
+);
 
 export default router;

@@ -7,24 +7,16 @@ datasource db {
 }
 
 model Appointment {
-  id               Int       @id @default(autoincrement())
-  doctorId         Int
-  userId           String
-  date             DateTime
-  time             String
-  videoCallUrl     String
-  status           String    @default("pending")
-  createdAt        DateTime  @default(now())
-  amount           Float?
-  callEndedAt      DateTime?
-  callStartedAt    DateTime?
-  metadata         Json?
-  patientName      String    @default("Self")
-  paymentReference String?   @unique
-  paymentStatus    String    @default("PENDING")
-  source           String    @default("DIRECT")
-  Doctor           Doctor    @relation(fields: [doctorId], references: [id])
-  User             User      @relation(fields: [userId], references: [id])
+  id           Int      @id @default(autoincrement())
+  doctorId     Int
+  userId       String
+  date         DateTime
+  time         String
+  videoCallUrl String
+  status       String   @default("pending")
+  createdAt    DateTime @default(now())
+  Doctor       Doctor   @relation(fields: [doctorId], references: [id])
+  User         User     @relation(fields: [userId], references: [id])
 }
 
 model Doctor {
@@ -36,11 +28,7 @@ model Doctor {
   fee            Int              @default(3000)
   rating         Float?           @default(0)
   specialty      String[]
-  isOnline       Boolean          @default(false)
-  userId         String?          @unique
-  workDays       String[]
   Appointment    Appointment[]
-  User           User?            @relation(fields: [userId], references: [id])
   FavoriteDoctor FavoriteDoctor[]
 }
 
@@ -59,7 +47,6 @@ model Hospital {
   phone     String?
   email     String?
   createdAt DateTime @default(now())
-  specialty String[]
 }
 
 model Lab {
@@ -96,7 +83,6 @@ model Transaction {
   updatedAt        DateTime           @updatedAt
   User             User               @relation(fields: [userId], references: [id])
   entries          LedgerEntry[]
-
 }
 
 model User {
@@ -116,9 +102,7 @@ model User {
   medicalHistory String[]
   smoker         Boolean?         @default(false)
   balance        Float?           @default(0)
-  role           String           @default("USER")
   Appointment    Appointment[]
-  Doctor         Doctor?
   FavoriteDoctor FavoriteDoctor[]
   Transaction    Transaction[]
   Wallet         Wallet?
@@ -192,7 +176,6 @@ model Escrow {
 
   buyer User @relation("EscrowBuyer", fields: [buyerId], references: [id])
   seller User @relation("EscrowSeller", fields: [sellerId], references: [id])
-
 }
 
 enum TransactionChannel {
@@ -214,6 +197,7 @@ enum TransactionType {
   PAYMENT
   REFUND
 }
+
 enum AccountType {
   USER
   SYSTEM

@@ -41,8 +41,9 @@ export const palmpayWebhook = async (req, res) => {
       payMethod,
     });
 
-    // PalmPay puts `sign` in the request body, not in a Signature header.
-    if (!verifyPalmPaySignature(payload)) {
+    // Defense-in-depth (route also uses requirePalmPayWebhookSignature middleware)
+    const headerSig = req.headers['signature'] || req.headers['x-palmpay-signature'];
+    if (!verifyPalmPaySignature(payload, { signatureHeader: headerSig ? String(headerSig) : undefined })) {
       console.warn(`[${requestId}] Invalid PalmPay signature`);
       return res.status(401).send('Invalid signature');
     }
@@ -174,5 +175,100 @@ export const palmpayWebhook = async (req, res) => {
     // retry according to its documented retry schedule, which gives us a
     // chance to process the notification successfully later.
     return res.status(500).send('Webhook processing failed');
+  }
+};
+
+/**
+ * PalmPay payout (merchant payment) result notification.
+ * Updates withdrawal transactions only — does not credit wallets.
+ */
+export const palmpayPayoutWebhook = async (req, res) => {
+  const requestId = `WH_PO_${Date.now()}`;
+  try {
+    const payload = req.body || {};
+    const { orderId, orderNo, orderStatus } = payload;
+
+    console.log(`[${requestId}] PalmPay payout webhook`, {
+      orderId,
+      orderNo,
+      orderStatus,
+    });
+
+    const headerSig = req.headers['signature'] || req.headers['x-palmpay-signature'];
+    if (!verifyPalmPaySignature(payload, { signatureHeader: headerSig ? String(headerSig) : undefined })) {
+      console.warn(`[${requestId}] Invalid payout signature`);
+      return res.status(401).send('Invalid signature');
+    }
+
+    if (!orderId) {
+      return res.status(400).send('Invalid payload');
+    }
+
+    const transaction = await prisma.transaction.findUnique({
+      where: { reference: String(orderId) },
+    });
+
+    if (!transaction) {
+      console.warn(`[${requestId}] Payout txn not found: ${orderId}`);
+      return res.status(404).send('Transaction not found');
+    }
+
+    const statusNum = Number(orderStatus);
+    // Same dictionary: 2 = success, 3 = fail, 4 = close
+    let newStatus = 'PENDING';
+    if (statusNum === 2) newStatus = 'SUCCESS';
+    else if (statusNum === 3 || statusNum === 4) newStatus = 'FAILED';
+
+    await prisma.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        status: newStatus,
+        meta: {
+          ...(typeof transaction.meta === 'object' && transaction.meta ? transaction.meta : {}),
+          kind: 'WITHDRAWAL',
+          payoutWebhook: payload,
+          palmpayOrderNo: orderNo,
+          palmpayOrderStatus: statusNum,
+        },
+        paystackResponse: payload,
+      },
+    });
+
+    // On failure after ledger debit, reverse (idempotent by unique reverse reference)
+    if (newStatus === 'FAILED' && transaction.status !== 'FAILED') {
+      try {
+        const { createMultiEntry } = await import('../services/doubleLedger.service.js');
+        const userAccount = await prisma.account.findFirst({
+          where: { userId: transaction.userId },
+        });
+        const systemAccount = await prisma.account.findFirst({
+          where: { accountNumber: 'SYSTEM_PAYOUT' },
+        });
+        if (userAccount && systemAccount) {
+          const revRef = `${String(orderId).slice(0, 30)}R`;
+          const existing = await prisma.transaction.findUnique({ where: { reference: revRef } });
+          if (!existing) {
+            await createMultiEntry({
+              reference: revRef,
+              userId: transaction.userId,
+              type: 'REFUND',
+              channel: 'BANK_TRANSFER',
+              narration: 'Withdrawal failed — auto reversal',
+              entries: [
+                { accountId: systemAccount.id, type: 'DEBIT', amount: Number(transaction.amount) },
+                { accountId: userAccount.id, type: 'CREDIT', amount: Number(transaction.amount) },
+              ],
+            });
+          }
+        }
+      } catch (revErr) {
+        console.error(`[${requestId}] Reversal failed:`, revErr.message);
+      }
+    }
+
+    return res.status(200).send('success');
+  } catch (error) {
+    console.error(`[${requestId}] Payout webhook error:`, error);
+    return res.status(500).send('error');
   }
 };
