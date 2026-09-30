@@ -19,6 +19,7 @@ export function assertEnv() {
     // request handler with a cryptic crypto/JWT error.
     console.error(
       `❌ Missing required environment variable(s): ${missing.join(', ')}\n` +
+      `   JWT_SECRET must match the ZHS backend exactly (admin dashboard tokens).\n` +
       `   See .env.example for the full list of variables this service needs.`
     );
     throw new Error(`Missing env variable(s): ${missing.join(', ')}`);
