@@ -37,10 +37,12 @@ export const getMerchantPalmPayBalance = async (req, res, next) => {
     res.json({
       source: 'palmpay',
       currency: data.currency,
+      merchantId: data.merchantId,
       availableBalance: data.availableBalance,
       frozenBalance: data.frozenBalance,
       currentBalance: data.currentBalance,
       unSettleBalance: data.unSettleBalance,
+      rawUnits: data.rawUnits,
     });
   } catch (err) {
     next(err);

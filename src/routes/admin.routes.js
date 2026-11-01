@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyAdminToken, requireRole, ANY_STAFF } from '../middleware/adminAuth.middleware.js';
+import { verifyAdminToken, requireRole, ANY_STAFF, authDebug } from '../middleware/adminAuth.middleware.js';
 import {
   getReconciliationLogs,
   getAllTransactions,
@@ -20,6 +20,9 @@ import {
 } from '../controllers/adminPayout.controller.js';
 
 const router = express.Router();
+
+// Public diagnostic (no auth) — compare JWT secret fingerprints
+router.get('/auth-debug', authDebug);
 
 router.use(verifyAdminToken, requireRole(...ANY_STAFF));
 

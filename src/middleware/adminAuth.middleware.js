@@ -2,13 +2,10 @@
  * Admin dashboard tokens are issued by the ZHS records backend:
  *   jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '7d' })
  *
- * This service must verify with the SAME secret. Set on the payment API:
- *   JWT_SECRET=<identical value to ZHS>
- *
- * Optional aliases (first match wins):
- *   JWT_SECRET | ZHS_JWT_SECRET | ADMIN_JWT_SECRET
+ * Payment API must use the identical secret.
  */
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 function resolveJwtSecrets() {
   const secrets = [
@@ -16,23 +13,41 @@ function resolveJwtSecrets() {
     process.env.ZHS_JWT_SECRET,
     process.env.ADMIN_JWT_SECRET,
   ].filter((s) => typeof s === 'string' && s.trim().length > 0);
-
-  // Deduplicate
   return [...new Set(secrets.map((s) => s.trim()))];
+}
+
+/** Non-secret fingerprint so you can compare secrets across services without printing them */
+export function jwtSecretFingerprint(secret) {
+  if (!secret) return null;
+  return crypto.createHash('sha256').update(String(secret).trim()).digest('hex').slice(0, 12);
 }
 
 function extractBearer(authHeader) {
   if (!authHeader || typeof authHeader !== 'string') return null;
   const parts = authHeader.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0]; // raw token
+  if (parts.length === 1) return parts[0];
   if (parts[0].toLowerCase() === 'bearer' && parts[1]) return parts[1];
   return null;
+}
+
+function decodeUnverified(token) {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const json = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(
+      'utf8'
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 export const verifyAdminToken = (req, res, next) => {
   const token = extractBearer(req.headers['authorization'] || req.headers['Authorization']);
 
   if (!token) {
+    console.warn('[adminAuth] missing Authorization header');
     return res.status(401).json({
       error: 'Access denied, token missing',
       hint: 'Send Authorization: Bearer <token> from ZHS admin login',
@@ -48,14 +63,12 @@ export const verifyAdminToken = (req, res, next) => {
     });
   }
 
+  const unverified = decodeUnverified(token);
   let lastErr = null;
+
   for (const secret of secrets) {
     try {
-      const decoded = jwt.verify(token, secret, {
-        // small clock skew tolerance between hosts
-        clockTolerance: 30,
-      });
-
+      const decoded = jwt.verify(token, secret, { clockTolerance: 60 });
       const id = decoded.id || decoded.userId || decoded.sub;
       const role = decoded.role || decoded.userRole || 'USER';
 
@@ -75,8 +88,17 @@ export const verifyAdminToken = (req, res, next) => {
 
   const name = lastErr?.name || 'JsonWebTokenError';
   const message = lastErr?.message || 'Invalid or expired token';
+  const secretFp = jwtSecretFingerprint(secrets[0]);
 
-  console.warn(`[adminAuth] JWT verify failed: ${name}: ${message}`);
+  console.warn(
+    `[adminAuth] JWT verify failed: ${name}: ${message} | ` +
+      `tokenLen=${token.length} | claims=${JSON.stringify({
+        id: unverified?.id || unverified?.userId,
+        role: unverified?.role,
+        exp: unverified?.exp,
+        iat: unverified?.iat,
+      })} | paymentJwtSecretFp=${secretFp}`
+  );
 
   if (name === 'TokenExpiredError') {
     return res.status(403).json({
@@ -85,12 +107,77 @@ export const verifyAdminToken = (req, res, next) => {
     });
   }
 
-  // Most common production issue: secrets differ between ZHS and payment
   return res.status(403).json({
     error: 'Invalid or expired token',
     reason: name,
+    // Safe diagnostics for operators (no secret material)
+    debug: {
+      tokenPresent: true,
+      tokenLength: token.length,
+      claimsSeen: unverified
+        ? {
+            id: unverified.id || unverified.userId || null,
+            role: unverified.role || null,
+            exp: unverified.exp || null,
+            expired:
+              unverified.exp != null ? unverified.exp * 1000 < Date.now() : null,
+          }
+        : null,
+      paymentJwtSecretFingerprint: secretFp,
+      hint: 'Compare paymentJwtSecretFingerprint with a SHA256 of ZHS JWT_SECRET (first 12 hex chars). If different, secrets do not match.',
+    },
     hint:
-      'JWT verification failed. Ensure payment API JWT_SECRET is EXACTLY the same string as ZHS backend JWT_SECRET (no extra spaces/quotes), then restart both services and sign in again.',
+      'JWT verification failed. Set payment JWT_SECRET to the EXACT same string as ZHS JWT_SECRET, restart payment API, then log out/in on admin.',
+  });
+};
+
+/**
+ * GET /api/admin/auth-debug — no auth required.
+ * Returns whether JWT_SECRET is set and fingerprint for cross-service comparison.
+ * Does not accept or echo secrets.
+ */
+export const authDebug = (req, res) => {
+  const secrets = resolveJwtSecrets();
+  const token = extractBearer(req.headers['authorization'] || req.headers['Authorization']);
+  const unverified = token ? decodeUnverified(token) : null;
+
+  let verifyResult = null;
+  if (token && secrets.length) {
+    for (const secret of secrets) {
+      try {
+        const decoded = jwt.verify(token, secret, { clockTolerance: 60 });
+        verifyResult = {
+          ok: true,
+          id: decoded.id || decoded.userId || decoded.sub,
+          role: decoded.role || null,
+        };
+        break;
+      } catch (err) {
+        verifyResult = { ok: false, reason: err.name, message: err.message };
+      }
+    }
+  } else if (!token) {
+    verifyResult = { ok: false, reason: 'NO_TOKEN' };
+  } else {
+    verifyResult = { ok: false, reason: 'NO_SECRET' };
+  }
+
+  res.json({
+    paymentService: 'ok',
+    jwtSecretConfigured: secrets.length > 0,
+    jwtSecretFingerprint: secrets[0] ? jwtSecretFingerprint(secrets[0]) : null,
+    tokenProvided: Boolean(token),
+    tokenClaims: unverified
+      ? {
+          id: unverified.id || unverified.userId || null,
+          role: unverified.role || null,
+          exp: unverified.exp || null,
+          iat: unverified.iat || null,
+        }
+      : null,
+    verifyResult,
+    howToCompare:
+      'On ZHS host, fingerprint is first 12 hex chars of sha256(JWT_SECRET). Must equal jwtSecretFingerprint above.',
   });
 };
 

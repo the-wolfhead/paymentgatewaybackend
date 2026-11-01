@@ -3,7 +3,7 @@
  *
  * Deposit (collect):  POST /api/v2/payment/merchant/createorder
  * Payout (withdraw):  POST /api/v2/merchant/payment/payout
- * Merchant balance:   POST /api/v2/merchant/payment/balance/query  (override via env)
+ * Merchant balance:   POST /api/v2/merchant/manage/account/queryBalance
  * Bank list:          POST /api/v2/general/merchant/queryBankList
  * Resolve account:    POST /api/v2/payment/merchant/payout/queryBankAccount
  * Payout status:      POST /api/v2/merchant/payment/payout/queryStatus (override via env)
@@ -24,9 +24,9 @@ const MERCHANT_PRIVATE_KEY = process.env.PALMPAY_MERCHANT_PRIVATE_KEY;
 const PATHS = {
   createOrder: '/api/v2/payment/merchant/createorder',
   payout: '/api/v2/merchant/payment/payout',
-  /** PalmPay balance query — path can vary by account type; override if your dashboard differs */
+  /** Official docs: /api/v2/merchant/manage/account/queryBalance */
   merchantBalance:
-    process.env.PALMPAY_BALANCE_PATH || '/api/v2/merchant/payment/balance/query',
+    process.env.PALMPAY_BALANCE_PATH || '/api/v2/merchant/manage/account/queryBalance',
   bankList: '/api/v2/general/merchant/queryBankList',
   queryBankAccount: '/api/v2/payment/merchant/payout/queryBankAccount',
   payoutStatus:
@@ -219,14 +219,26 @@ export const palmPayQueryPayoutStatus = async (orderId) => {
  * Amounts returned in Naira (converted from PalmPay minimum units).
  */
 export const palmPayQueryMerchantBalance = async () => {
+  // Body merchantId is the PalmPay merchant *number* (docs example: "24911478").
+  // Authorization Bearer uses PALMPAY_AUTH_TOKEN — often a different value.
   const merchantId =
-    process.env.PALMPAY_MERCHANT_ID || process.env.PALMPAY_AUTH_TOKEN || MERCHANT_ID;
+    process.env.PALMPAY_MERCHANT_ID ||
+    process.env.PALMPAY_MERCHANT_NO ||
+    process.env.PALMPAY_AUTH_TOKEN ||
+    MERCHANT_ID;
+
+  if (!merchantId) {
+    throw new Error(
+      'PALMPAY_MERCHANT_ID is required to query merchant balance (PalmPay merchant number)'
+    );
+  }
 
   const data = await signedRequest(PATHS.merchantBalance, {
     merchantId: String(merchantId),
   });
 
   const raw = data?.data || data || {};
+  // PalmPay returns Long amounts in minimum units (kobo for NGN): 100 = ₦1
   const available = fromPalmPayAmount(
     raw.availableBalance ?? raw.available_balance ?? raw.available
   );
@@ -244,6 +256,14 @@ export const palmPayQueryMerchantBalance = async () => {
     currentBalance: current || available + frozen,
     unSettleBalance: unSettle,
     currency: 'NGN',
+    merchantId: String(merchantId),
+    // Raw minimum-unit values for debugging
+    rawUnits: {
+      availableBalance: raw.availableBalance,
+      frozenBalance: raw.frozenBalance,
+      currentBalance: raw.currentBalance ?? raw.currentBlance,
+      unSettleBalance: raw.unSettleBalance,
+    },
     raw: data,
   };
 };
