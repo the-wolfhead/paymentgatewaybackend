@@ -6,7 +6,7 @@
  * Merchant balance:   POST /api/v2/merchant/manage/account/queryBalance
  * Bank list:          POST /api/v2/general/merchant/queryBankList
  * Resolve account:    POST /api/v2/payment/merchant/payout/queryBankAccount
- * Payout status:      POST /api/v2/merchant/payment/payout/queryStatus (override via env)
+ * Payout status:      POST /api/v2/merchant/payment/queryPayStatus
  *
  * Auth: Bearer PALMPAY_AUTH_TOKEN + RSA-SHA1 Signature of MD5(sorted body).
  */
@@ -29,8 +29,9 @@ const PATHS = {
     process.env.PALMPAY_BALANCE_PATH || '/api/v2/merchant/manage/account/queryBalance',
   bankList: '/api/v2/general/merchant/queryBankList',
   queryBankAccount: '/api/v2/payment/merchant/payout/queryBankAccount',
+  /** Official docs: /api/v2/merchant/payment/queryPayStatus */
   payoutStatus:
-    process.env.PALMPAY_PAYOUT_STATUS_PATH || '/api/v2/merchant/payment/payout/queryStatus',
+    process.env.PALMPAY_PAYOUT_STATUS_PATH || '/api/v2/merchant/payment/queryPayStatus',
 };
 
 function assertConfigured() {
@@ -170,6 +171,27 @@ export const palmPayCreateDeposit = async (orderData) => {
  * Initiate merchant balance payout to a bank or PalmPay account.
  * @see https://docs.palmpay.com/en-us/pay-outs/initiate-merchant-payment.md
  */
+/**
+ * PalmPay orderStatus (data dictionary):
+ *   0 = unpaid, 1 = paying, 2 = success, 3 = fail, 4 = close
+ */
+export function mapPalmPayOrderStatus(orderStatus) {
+  const n = Number(orderStatus);
+  if (n === 2) return 'SUCCESS';
+  if (n === 3 || n === 4) return 'FAILED';
+  if (n === 0 || n === 1) return 'PENDING';
+  return 'PENDING';
+}
+
+/**
+ * Initiate merchant balance payout to a bank or PalmPay account.
+ * Path: POST /api/v2/merchant/payment/payout
+ * @see https://docs.palmpay.com/en-us/pay-outs/initiate-merchant-payment.md
+ *
+ * Required: orderId, payeeBankAccNo, amount, currency, notifyUrl, remark
+ * Required (NG): payeeBankCode
+ * amount is in Naira; converted to minimum units (100 = ₦1).
+ */
 export const palmPayInitiatePayout = async ({
   orderId,
   amount,
@@ -177,39 +199,63 @@ export const palmPayInitiatePayout = async ({
   payeeBankCode,
   payeeBankAccNo,
   payeePhoneNo,
+  payeeEmail,
   remark,
   title,
   description,
 }) => {
   const requestId = `PP_PAYOUT_${Date.now()}`;
-  const notifyUrl = `${(process.env.BASE_URL || '').replace(/\/$/, '')}/api/webhooks/palmpay-payout`;
+  const base = (process.env.BASE_URL || process.env.PAYMENT_PUBLIC_URL || '').replace(/\/$/, '');
+  if (!base) {
+    console.warn(
+      '[PalmPay payout] BASE_URL is not set — notifyUrl may be invalid. Set BASE_URL to your payment API public URL.'
+    );
+  }
+  const notifyUrl = `${base}/api/webhooks/palmpay-payout`;
+
+  // Docs: account number purely numeric, no spaces/special characters
+  const accNo = String(payeeBankAccNo || '').replace(/\D/g, '');
+  if (!accNo) {
+    throw new Error('payeeBankAccNo is required');
+  }
+  if (!payeeBankCode) {
+    throw new Error('payeeBankCode is required for NG payouts');
+  }
 
   return signedRequest(
     PATHS.payout,
     {
       orderId: String(orderId).slice(0, 32),
-      title: title || 'Wallet withdrawal',
-      description: description || 'User wallet withdrawal',
+      title: title || 'Payout',
+      description: description || 'Merchant payout',
       payeeName: payeeName || 'Beneficiary',
       payeeBankCode: String(payeeBankCode),
-      payeeBankAccNo: String(payeeBankAccNo).replace(/\s+/g, ''),
+      payeeBankAccNo: accNo,
       ...(payeePhoneNo ? { payeePhoneNo: String(payeePhoneNo) } : {}),
+      ...(payeeEmail ? { payeeEmail: String(payeeEmail) } : {}),
       amount: toPalmPayAmount(amount),
       currency: 'NGN',
       notifyUrl,
-      remark: remark != null ? String(remark) : 'withdrawal',
+      // remark is required by PalmPay (may be empty string)
+      remark: remark != null && String(remark).trim() !== '' ? String(remark).slice(0, 200) : 'payout',
     },
     { requestId }
   );
 };
 
 /**
- * Query payout / transfer result by merchant orderId.
+ * Query payout result.
+ * Path: POST /api/v2/merchant/payment/queryPayStatus
+ * Send orderId and/or orderNo.
  */
-export const palmPayQueryPayoutStatus = async (orderId) => {
-  return signedRequest(PATHS.payoutStatus, {
-    orderId: String(orderId).slice(0, 32),
-  });
+export const palmPayQueryPayoutStatus = async ({ orderId, orderNo } = {}) => {
+  const body = {};
+  if (orderId) body.orderId = String(orderId).slice(0, 32);
+  if (orderNo) body.orderNo = String(orderNo).slice(0, 32);
+  if (!body.orderId && !body.orderNo) {
+    throw new Error('orderId or orderNo is required to query payout status');
+  }
+  return signedRequest(PATHS.payoutStatus, body);
 };
 
 /* ── Merchant balance (PalmPay float) ────────────────────────────────────── */
@@ -304,6 +350,7 @@ export default {
   palmPayCreateDeposit,
   palmPayInitiatePayout,
   palmPayQueryPayoutStatus,
+  mapPalmPayOrderStatus,
   palmPayQueryMerchantBalance,
   palmPayQueryBankList,
   palmPayQueryBankAccount,

@@ -1,11 +1,18 @@
 /**
- * PalmPay payout adapter used by withdrawal.service.
+ * PalmPay payout adapter (admin payouts + user withdrawals).
+ * Aligns with docs:
+ *   initiate: POST /api/v2/merchant/payment/payout
+ *   status:   POST /api/v2/merchant/payment/queryPayStatus
  */
-import { palmPayInitiatePayout, palmPayQueryPayoutStatus } from './palmpayService.js';
+import {
+  palmPayInitiatePayout,
+  palmPayQueryPayoutStatus,
+  mapPalmPayOrderStatus,
+} from './palmpayService.js';
 
 /**
  * Send money from merchant PalmPay balance to a bank/MMO account.
- * amount is in Naira.
+ * @param amount Naira
  */
 export const sendPayout = async ({
   amount,
@@ -14,7 +21,10 @@ export const sendPayout = async ({
   name,
   reference,
   phone,
+  email,
   remark,
+  title,
+  description,
 }) => {
   if (!amount || Number(amount) <= 0) {
     throw new Error('Payout amount must be greater than zero');
@@ -24,22 +34,21 @@ export const sendPayout = async ({
   }
 
   const response = await palmPayInitiatePayout({
-    orderId: reference,
+    orderId: String(reference).slice(0, 32),
     amount: Number(amount),
     payeeName: name || 'Beneficiary',
     payeeBankCode: bankCode,
     payeeBankAccNo: accountNumber,
     payeePhoneNo: phone,
-    remark: remark || 'Wallet withdrawal',
+    payeeEmail: email,
+    remark: remark || 'payout',
+    title: title || 'Payout',
+    description: description || 'Merchant payout',
   });
 
   const payload = response?.data || response || {};
-  // orderStatus: typically 1=pending, 2=success, others fail — treat non-2 as pending/unknown
   const orderStatus = payload.orderStatus;
-  const success =
-    orderStatus === 2 ||
-    orderStatus === '2' ||
-    String(payload.message || '').toLowerCase() === 'success';
+  const status = mapPalmPayOrderStatus(orderStatus);
 
   return {
     provider: 'PALMPAY',
@@ -50,21 +59,36 @@ export const sendPayout = async ({
     sessionId: payload.sessionId || null,
     fee: payload.fee?.fee != null ? Number(payload.fee.fee) / 100 : null,
     amount: Number(amount),
+    amountUnits: payload.amount != null ? Number(payload.amount) : null,
     currency: payload.currency || 'NGN',
-    status: success ? 'SUCCESS' : orderStatus == null ? 'PENDING' : 'PENDING',
+    status,
     message: payload.message || payload.errorMsg || response?.respMsg || null,
     raw: response,
   };
 };
 
-export const queryPayout = async (reference) => {
-  const response = await palmPayQueryPayoutStatus(reference);
+/**
+ * @param {string} reference merchant orderId
+ * @param {string} [orderNo] PalmPay orderNo
+ */
+export const queryPayout = async (reference, orderNo) => {
+  const response = await palmPayQueryPayoutStatus({
+    orderId: reference,
+    orderNo,
+  });
   const payload = response?.data || response || {};
+  const orderStatus = payload.orderStatus;
   return {
     orderId: payload.orderId || reference,
-    orderNo: payload.orderNo || null,
-    orderStatus: payload.orderStatus ?? null,
-    message: payload.message || response?.respMsg,
+    orderNo: payload.orderNo || orderNo || null,
+    orderStatus: orderStatus ?? null,
+    status: mapPalmPayOrderStatus(orderStatus),
+    amount: payload.amount != null ? Number(payload.amount) / 100 : null,
+    fee: payload.fee?.fee != null ? Number(payload.fee.fee) / 100 : null,
+    sessionId: payload.sessionId || null,
+    message: payload.message || payload.errorMsg || response?.respMsg,
+    createdTime: payload.createdTime || null,
+    completedTime: payload.completedTime || null,
     raw: response,
   };
 };
